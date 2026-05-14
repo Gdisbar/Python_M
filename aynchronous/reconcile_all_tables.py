@@ -191,6 +191,22 @@ def reconcile_table(table):
     finally:
         ora_conn.close()
         pg_conn.close()
-        
+
+
+# ============================================================================
+# Main
+# ============================================================================
+def main():
+    print("🔁 Simple reconciliation started")
+    print("🔁 Reconciliation started (no primary key, matches by SOURCENUMBER)")
+    print(f"Source numbers: {SOURCE_NUMBERS}")
+    for table in TABLES:
+        try:
+            reconcile_table(table, SOURCE_NUMBERS)
+            reconcile_table(table)
+        except Exception as e:
+            print(f"  ❌ Error on {table}: {e}")
+    print("\n✅ Done.")
+
 if __name__ == "__main__":
     main()
