@@ -102,92 +102,95 @@ def values_equal(a, b):
         return a.replace(tzinfo=None) == b.replace(tzinfo=None)
     return str(a).strip() == str(b).strip()
 
+
 def reconcile_table(table):
     print(f"\n--- Processing table: {table} ---")
     ora_conn = get_oracle_conn()
     pg_conn = get_postgres_conn()
+    
     try:
         oracle = fetch_oracle_rows(ora_conn, table)
         postgres = fetch_postgres_rows(pg_conn, table)
-        
-        print(f"  SOURCENUMBER found - Oracle : {len(oracle)} | Postgres : {len(postgres)}")
-        
+       
+        print(f" SOURCENUMBER found - Oracle : {len(oracle)} | Postgres : {len(postgres)}")
+       
         missing_in_oracle = set(postgres.keys()) - set(oracle.keys())
         missing_in_postgres = set(oracle.keys()) - set(postgres.keys())
-        
+       
         if missing_in_oracle:
-            print(f"  ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s) (present only in Postgres)")
+            print(f" ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s)")
         if missing_in_postgres:
-            print(f"  ⚠️ Missing in Postgres: {len(missing_in_postgres)} row(s) (present only in Oracle)")
-        
-        mismatches_found = False
-        common = set(oracle.keys()) & set(postgres.keys())
-        
-        for sn in common:
-            o = oracle[sn]
-            p = postgres[sn]
-            # Build dictionaries
-            o_dict = {o['cols'][i]: o['vals'][i] for i in range(len(o['cols']))}
-            p_dict = {p['cols'][i]: p['vals'][i] for i in range(len(p['cols']))}
-            diffs = []
-            for col in o_dict:
-                if col not in p_dict:
-                    diffs.append((col, o_dict[col], '<missing column>'))
-                elif not values_equal(o_dict[col], p_dict[col]):
-                    diffs.append((col, o_dict[col], p_dict[col]))
-            if diffs:
-                if not mismatches_found:
-                    print("\n  Mismatches:")
-                    mismatches_found = True
-                for col, oval, pval in diffs:
-                    print(f"    • {col}:")
-                    print(f"        CEX01_OWN.{col} : {oval}")
-                    print(f"        sba_own.{col}   : {pval}")
-                print()
-        
-        if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
-            print("  No mismatch found.")
-        
-        # Save JSON
+            print(f" ⚠️ Missing in Postgres: {len(missing_in_postgres)} row(s)")
+
         report = {
             "table": table,
             "source_numbers": SOURCE_NUMBERS,
-            "oracle_rows": len(oracle),
-            "postgres_rows": len(postgres),
+            "oracle_row_count": len(oracle),
+            "postgres_row_count": len(postgres),
             "missing_in_oracle": list(missing_in_oracle),
             "missing_in_postgres": list(missing_in_postgres),
-            "mismatches": {}
+            "mismatches_by_sourcenumber": {}
         }
+
+        common = set(oracle.keys()) & set(postgres.keys())
+        mismatches_found = False
+
         for sn in common:
             o = oracle[sn]
             p = postgres[sn]
+            
             o_dict = {o['cols'][i]: o['vals'][i] for i in range(len(o['cols']))}
             p_dict = {p['cols'][i]: p['vals'][i] for i in range(len(p['cols']))}
-            row_diffs = []
-            for col in o_dict:
+            
+            row_mismatches = {}
+            
+            # Check all columns from Oracle + any extra in Postgres
+            all_columns = set(o_dict.keys()) | set(p_dict.keys())
+            
+            for col in sorted(all_columns):
+                oval = o_dict.get(col)
+                pval = p_dict.get(col)
+                
                 if col not in p_dict:
-                    row_diffs.append({"column": col, "oracle": str(o_dict[col]), "postgres": "<missing>"})
-                elif not values_equal(o_dict[col], p_dict[col]):
-                    row_diffs.append({"column": col, "oracle": str(o_dict[col]), "postgres": str(p_dict[col])})
-            if row_diffs:
-                report["mismatches"][sn] = row_diffs
-        with open(f"report_{table}.json", "w") as f:
-            json.dump(report, f, indent=2, default=str)
-        print(f"  📄 Report saved to report_{table}.json")
+                    row_mismatches[col] = {
+                        "oracle": oval,
+                        "postgres": "<column_missing>"
+                    }
+                elif col not in o_dict:
+                    row_mismatches[col] = {
+                        "oracle": "<column_missing>",
+                        "postgres": pval
+                    }
+                elif not values_equal(oval, pval):
+                    row_mismatches[col] = {
+                        "oracle": oval,
+                        "postgres": pval
+                    }
+            
+            if row_mismatches:
+                mismatches_found = True
+                report["mismatches_by_sourcenumber"][sn] = {
+                    "mismatch_count": len(row_mismatches),
+                    "columns": row_mismatches
+                }
+                
+                # Console output (cleaner)
+                print(f"\n🔴 Mismatch found for SOURCENUMBER: {sn}")
+                for col, diff in row_mismatches.items():
+                    print(f"   • {col:25} | Oracle: {diff['oracle']} | Postgres: {diff['postgres']}")
+
+        if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
+            print(" ✅ No mismatch found.")
+
+        # Save improved JSON
+        with open(f"report_{table}.json", "w", encoding='utf-8') as f:
+            json.dump(report, f, indent=2, default=str, ensure_ascii=False)
         
+        print(f" 📄 Clean report saved to report_{table}.json")
+
     finally:
         ora_conn.close()
         pg_conn.close()
-
-def main():
-    print("🔁 Reconciliation started (no primary key, matches by SOURCENUMBER)")
-    print(f"Source numbers: {SOURCE_NUMBERS}")
-    for table in TABLES:
-        try:
-            reconcile_table(table)
-        except Exception as e:
-            print(f"  ❌ Error on {table}: {e}")
-    print("\n✅ Done.")
-
+        
 if __name__ == "__main__":
     main()
