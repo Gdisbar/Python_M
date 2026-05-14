@@ -202,7 +202,7 @@ def main():
     print(f"Source numbers: {SOURCE_NUMBERS}")
     for table in TABLES:
         try:
-            reconcile_table(table, SOURCE_NUMBERS)
+            # reconcile_table(table, SOURCE_NUMBERS)
             reconcile_table(table)
         except Exception as e:
             print(f"  ❌ Error on {table}: {e}")
