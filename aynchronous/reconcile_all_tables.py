@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Simple Oracle ↔ Postgres reconciliation for multiple tables,
-filtered by SOURCENUMBER values.
+Simple Oracle ↔ Postgres reconciliation
+No primary key – matches by SOURCENUMBER
 """
 
 import os
 import sys
 import json
-from typing import List, Tuple, Dict, Any
+from typing import List, Dict, Any
 from decimal import Decimal
 from datetime import datetime
 
@@ -17,9 +17,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ============================================================================
-# Configuration from .env
-# ============================================================================
 SOURCE_NUMBERS = [s.strip() for s in os.getenv("SOURCE_NUMBERS", "").split(",") if s.strip()]
 if not SOURCE_NUMBERS:
     print("❌ No SOURCE_NUMBERS defined in .env")
@@ -27,7 +24,7 @@ if not SOURCE_NUMBERS:
 
 ORACLE_USER = os.getenv("ORACLE_USER")
 ORACLE_PASSWORD = os.getenv("ORACLE_PASSWORD")
-ORACLE_DSN = os.getenv("ORACLE_DSN")          # e.g. "host:1521/service_name"
+ORACLE_DSN = os.getenv("ORACLE_DSN")
 
 PG_HOST = os.getenv("PG_HOST")
 PG_PORT = os.getenv("PG_PORT", "5432")
@@ -35,7 +32,6 @@ PG_DATABASE = os.getenv("PG_DATABASE")
 PG_USER = os.getenv("PG_USER")
 PG_PASSWORD = os.getenv("PG_PASSWORD")
 
-# Tables to reconcile (Oracle uppercase, Postgres lowercase)
 TABLES = [
     "charge", "chargelineitem", "discount", "discountlineitem",
     "invoice", "invoicedetail", "salestran", "salestrandetail",
@@ -43,229 +39,152 @@ TABLES = [
     "shipmentline", "tenderlineitem"
 ]
 
-# ============================================================================
-# Database helpers
-# ============================================================================
-def get_oracle_connection():
+def get_oracle_conn():
     return oracledb.connect(user=ORACLE_USER, password=ORACLE_PASSWORD, dsn=ORACLE_DSN)
 
-def get_postgres_connection():
+def get_postgres_conn():
     return psycopg2.connect(
         host=PG_HOST, port=PG_PORT, dbname=PG_DATABASE,
         user=PG_USER, password=PG_PASSWORD
     )
 
-def get_primary_key_oracle(conn, table: str) -> str:
-    """Return primary key column name for Oracle table."""
-    cursor = conn.cursor()
-    sql = """
-    SELECT cols.column_name
-    FROM all_constraints cons, all_cons_columns cols
-    WHERE cons.owner = 'CEX01_OWN'
-      AND cons.constraint_type = 'P'
-      AND cons.constraint_name = cols.constraint_name
-      AND cons.owner = cols.owner
-      AND cols.table_name = UPPER(:t)
-    """
-    cursor.execute(sql, t=table)
-    row = cursor.fetchone()
-    cursor.close()
-    if row:
-        return row[0].lower()
-    # Fallback: guess 'id' or 'tablename_id'
-    candidates = ['id', f"{table}_id"]
-    for cand in candidates:
-        try:
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT {cand} FROM CEX01_OWN.{table} WHERE ROWNUM=1")
-            cursor.close()
-            return cand
-        except:
-            continue
-    raise RuntimeError(f"Cannot find primary key for {table}")
+def fetch_oracle_rows(conn, table: str):
+    placeholders = ','.join([f"'{sn}'" for sn in SOURCE_NUMBERS])
+    sql = f"SELECT * FROM CEX01_OWN.{table} WHERE SOURCENUMBER IN ({placeholders})"
+    cur = conn.cursor()
+    cur.execute(sql)
+    col_names = [desc[0] for desc in cur.description]  # preserve original case
+    rows = cur.fetchall()
+    cur.close()
+    # Find SOURCENUMBER index
+    sn_idx = None
+    for i, name in enumerate(col_names):
+        if name.upper() == 'SOURCENUMBER':
+            sn_idx = i
+            break
+    if sn_idx is None:
+        raise ValueError(f"Table {table} has no SOURCENUMBER column")
+    result = {}
+    for row in rows:
+        sn = str(row[sn_idx])
+        result[sn] = {'cols': col_names, 'vals': row}
+    return result
 
-def get_primary_key_postgres(conn, table: str) -> str:
-    """Return primary key column name for Postgres table."""
-    cursor = conn.cursor()
-    sql = """
-    SELECT a.attname
-    FROM pg_index i
-    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-    WHERE i.indrelid = ('sba_own.' || %s)::regclass AND i.indisprimary
-    """
-    cursor.execute(sql, (table,))
-    row = cursor.fetchone()
-    cursor.close()
-    if row:
-        return row[0]
-    candidates = ['id', f"{table}_id"]
-    for cand in candidates:
-        try:
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT {cand} FROM sba_own.{table} LIMIT 1")
-            cursor.close()
-            return cand
-        except:
-            continue
-    raise RuntimeError(f"Cannot find primary key for {table}")
+def fetch_postgres_rows(conn, table: str):
+    placeholders = ','.join([f"'{sn}'" for sn in SOURCE_NUMBERS])
+    sql = f"SELECT * FROM sba_own.{table} WHERE sourcenumber IN ({placeholders})"
+    cur = conn.cursor()
+    cur.execute(sql)
+    col_names = [desc[0] for desc in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    sn_idx = None
+    for i, name in enumerate(col_names):
+        if name.lower() == 'sourcenumber':
+            sn_idx = i
+            break
+    if sn_idx is None:
+        raise ValueError(f"Table {table} has no sourcenumber column")
+    result = {}
+    for row in rows:
+        sn = str(row[sn_idx])
+        result[sn] = {'cols': col_names, 'vals': row}
+    return result
 
-def fetch_oracle_rows(conn, table: str, pk: str, source_numbers: List[str]) -> Dict[Any, Tuple]:
-    """Return dict {pk_value: (column_names, row_tuple)} for rows matching SOURCENUMBER."""
-    placeholders = ','.join([f"'{sn}'" for sn in source_numbers])
-    sql = f"""
-    SELECT * FROM CEX01_OWN.{table}
-    WHERE SOURCENUMBER IN ({placeholders})
-    """
-    cursor = conn.cursor()
-    cursor.execute(sql)
-    cols = [desc[0].lower() for desc in cursor.description]
-    rows = cursor.fetchall()
-    cursor.close()
-    pk_idx = cols.index(pk)
-    return {row[pk_idx]: (cols, row) for row in rows}
-
-def fetch_postgres_rows(conn, table: str, pk: str, source_numbers: List[str]) -> Dict[Any, Tuple]:
-    """Return dict {pk_value: (column_names, row_tuple)} for rows matching SOURCENUMBER."""
-    placeholders = ','.join([f"'{sn}'" for sn in source_numbers])
-    sql = f"""
-    SELECT * FROM sba_own.{table}
-    WHERE sourcenumber IN ({placeholders})
-    """
-    cursor = conn.cursor()
-    cursor.execute(sql)
-    cols = [desc[0].lower() for desc in cursor.description]
-    rows = cursor.fetchall()
-    cursor.close()
-    pk_idx = cols.index(pk)
-    return {row[pk_idx]: (cols, row) for row in rows}
-
-# ============================================================================
-# Comparison logic (simple value equality)
-# ============================================================================
-def values_equal(a: Any, b: Any) -> bool:
-    """Compare two values, handling None, Decimal, datetime."""
+def values_equal(a, b):
     if a is None and b is None:
         return True
     if a is None or b is None:
         return False
-    # Normalise numeric types
     if isinstance(a, (int, float, Decimal)) and isinstance(b, (int, float, Decimal)):
         return Decimal(str(a)) == Decimal(str(b))
-    # Normalise datetime (ignore timezone)
     if isinstance(a, datetime) and isinstance(b, datetime):
         return a.replace(tzinfo=None) == b.replace(tzinfo=None)
-    # String comparison
     return str(a).strip() == str(b).strip()
 
-def compare_rows(oracle_row: Tuple, oracle_cols: List[str],
-                 postgres_row: Tuple, postgres_cols: List[str]) -> List[Dict]:
-    """Return list of mismatches with column name and both values."""
-    oracle_dict = {col: oracle_row[i] for i, col in enumerate(oracle_cols)}
-    postgres_dict = {col: postgres_row[i] for i, col in enumerate(postgres_cols)}
-    
-    mismatches = []
-    for col in oracle_cols:
-        if col not in postgres_dict:
-            mismatches.append({
-                "column": col,
-                "oracle": oracle_dict[col],
-                "postgres": "<column missing in Postgres>"
-            })
-            continue
-        o_val = oracle_dict[col]
-        p_val = postgres_dict[col]
-        if not values_equal(o_val, p_val):
-            mismatches.append({
-                "column": col,
-                "oracle": o_val,
-                "postgres": p_val
-            })
-    return mismatches
-
-# ============================================================================
-# Main reconciliation for one table
-# ============================================================================
-def reconcile_table(table: str, source_numbers: List[str]):
+def reconcile_table(table):
     print(f"\n--- Processing table: {table} ---")
-    
-    ora_conn = get_oracle_connection()
-    pg_conn = get_postgres_connection()
-    
+    ora_conn = get_oracle_conn()
+    pg_conn = get_postgres_conn()
     try:
-        pk = get_primary_key_oracle(ora_conn, table)
+        oracle = fetch_oracle_rows(ora_conn, table)
+        postgres = fetch_postgres_rows(pg_conn, table)
         
-        oracle_rows = fetch_oracle_rows(ora_conn, table, pk, source_numbers)
-        pg_rows = fetch_postgres_rows(pg_conn, table, pk, source_numbers)
+        print(f"  SOURCENUMBER found - Oracle : {len(oracle)} | Postgres : {len(postgres)}")
         
-        # Print row counts
-        print(f"  SOURCENUMBER found - Oracle : {len(oracle_rows)} | Postgres : {len(pg_rows)}")
-        
-        # Check for missing sides
-        missing_in_oracle = set(pg_rows.keys()) - set(oracle_rows.keys())
-        missing_in_postgres = set(oracle_rows.keys()) - set(pg_rows.keys())
+        missing_in_oracle = set(postgres.keys()) - set(oracle.keys())
+        missing_in_postgres = set(oracle.keys()) - set(postgres.keys())
         
         if missing_in_oracle:
             print(f"  ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s) (present only in Postgres)")
         if missing_in_postgres:
             print(f"  ⚠️ Missing in Postgres: {len(missing_in_postgres)} row(s) (present only in Oracle)")
         
-        # Compare common rows and collect mismatches
         mismatches_found = False
-        common_pks = set(oracle_rows.keys()) & set(pg_rows.keys())
+        common = set(oracle.keys()) & set(postgres.keys())
         
-        for pk_val in common_pks:
-            oracle_cols, oracle_row = oracle_rows[pk_val]
-            pg_cols, pg_row = pg_rows[pk_val]
-            diffs = compare_rows(oracle_row, oracle_cols, pg_row, pg_cols)
-            
+        for sn in common:
+            o = oracle[sn]
+            p = postgres[sn]
+            # Build dictionaries
+            o_dict = {o['cols'][i]: o['vals'][i] for i in range(len(o['cols']))}
+            p_dict = {p['cols'][i]: p['vals'][i] for i in range(len(p['cols']))}
+            diffs = []
+            for col in o_dict:
+                if col not in p_dict:
+                    diffs.append((col, o_dict[col], '<missing column>'))
+                elif not values_equal(o_dict[col], p_dict[col]):
+                    diffs.append((col, o_dict[col], p_dict[col]))
             if diffs:
                 if not mismatches_found:
                     print("\n  Mismatches:")
                     mismatches_found = True
-                for diff in diffs:
-                    print(f"    • {diff['column']}:")
-                    print(f"        CEX01_OWN.{diff['column']} : {diff['oracle']}")
-                    print(f"        sba_own.{diff['column']}   : {diff['postgres']}")
-                print()  # blank line between rows if multiple
+                for col, oval, pval in diffs:
+                    print(f"    • {col}:")
+                    print(f"        CEX01_OWN.{col} : {oval}")
+                    print(f"        sba_own.{col}   : {pval}")
+                print()
         
         if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
             print("  No mismatch found.")
         
-        # Save JSON report
-        mismatches_dict = {}
-        for pk_val in common_pks:
-            oracle_cols, oracle_row = oracle_rows[pk_val]
-            pg_cols, pg_row = pg_rows[pk_val]
-            diffs = compare_rows(oracle_row, oracle_cols, pg_row, pg_cols)
-            if diffs:
-                mismatches_dict[str(pk_val)] = diffs
-        
+        # Save JSON
         report = {
             "table": table,
-            "source_numbers": source_numbers,
-            "oracle_rows": len(oracle_rows),
-            "postgres_rows": len(pg_rows),
+            "source_numbers": SOURCE_NUMBERS,
+            "oracle_rows": len(oracle),
+            "postgres_rows": len(postgres),
             "missing_in_oracle": list(missing_in_oracle),
             "missing_in_postgres": list(missing_in_postgres),
-            "mismatches": mismatches_dict
+            "mismatches": {}
         }
+        for sn in common:
+            o = oracle[sn]
+            p = postgres[sn]
+            o_dict = {o['cols'][i]: o['vals'][i] for i in range(len(o['cols']))}
+            p_dict = {p['cols'][i]: p['vals'][i] for i in range(len(p['cols']))}
+            row_diffs = []
+            for col in o_dict:
+                if col not in p_dict:
+                    row_diffs.append({"column": col, "oracle": str(o_dict[col]), "postgres": "<missing>"})
+                elif not values_equal(o_dict[col], p_dict[col]):
+                    row_diffs.append({"column": col, "oracle": str(o_dict[col]), "postgres": str(p_dict[col])})
+            if row_diffs:
+                report["mismatches"][sn] = row_diffs
         with open(f"report_{table}.json", "w") as f:
             json.dump(report, f, indent=2, default=str)
-        print(f"  📄 Detailed report saved to report_{table}.json")
+        print(f"  📄 Report saved to report_{table}.json")
         
     finally:
         ora_conn.close()
         pg_conn.close()
 
-# ============================================================================
-# Main
-# ============================================================================
 def main():
-    print("🔁 Simple reconciliation started")
+    print("🔁 Reconciliation started (no primary key, matches by SOURCENUMBER)")
     print(f"Source numbers: {SOURCE_NUMBERS}")
     for table in TABLES:
         try:
-            reconcile_table(table, SOURCE_NUMBERS)
+            reconcile_table(table)
         except Exception as e:
             print(f"  ❌ Error on {table}: {e}")
     print("\n✅ Done.")
