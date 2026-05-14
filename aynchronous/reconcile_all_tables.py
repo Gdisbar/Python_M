@@ -7,7 +7,7 @@ filtered by SOURCENUMBER values.
 import os
 import sys
 import json
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 from decimal import Decimal
 from datetime import datetime
 
@@ -58,7 +58,6 @@ def get_postgres_connection():
 def get_primary_key_oracle(conn, table: str) -> str:
     """Return primary key column name for Oracle table."""
     cursor = conn.cursor()
-    # Query all constraints for primary key
     sql = """
     SELECT cols.column_name
     FROM all_constraints cons, all_cons_columns cols
@@ -111,7 +110,7 @@ def get_primary_key_postgres(conn, table: str) -> str:
     raise RuntimeError(f"Cannot find primary key for {table}")
 
 def fetch_oracle_rows(conn, table: str, pk: str, source_numbers: List[str]) -> Dict[Any, Tuple]:
-    """Return dict {pk_value: row_tuple} for rows matching SOURCENUMBER."""
+    """Return dict {pk_value: (column_names, row_tuple)} for rows matching SOURCENUMBER."""
     placeholders = ','.join([f"'{sn}'" for sn in source_numbers])
     sql = f"""
     SELECT * FROM CEX01_OWN.{table}
@@ -126,7 +125,7 @@ def fetch_oracle_rows(conn, table: str, pk: str, source_numbers: List[str]) -> D
     return {row[pk_idx]: (cols, row) for row in rows}
 
 def fetch_postgres_rows(conn, table: str, pk: str, source_numbers: List[str]) -> Dict[Any, Tuple]:
-    """Return dict {pk_value: row_tuple} for rows matching SOURCENUMBER."""
+    """Return dict {pk_value: (column_names, row_tuple)} for rows matching SOURCENUMBER."""
     placeholders = ','.join([f"'{sn}'" for sn in source_numbers])
     sql = f"""
     SELECT * FROM sba_own.{table}
@@ -161,11 +160,9 @@ def values_equal(a: Any, b: Any) -> bool:
 def compare_rows(oracle_row: Tuple, oracle_cols: List[str],
                  postgres_row: Tuple, postgres_cols: List[str]) -> List[Dict]:
     """Return list of mismatches with column name and both values."""
-    # Build a dict of oracle values by column name
     oracle_dict = {col: oracle_row[i] for i, col in enumerate(oracle_cols)}
     postgres_dict = {col: postgres_row[i] for i, col in enumerate(postgres_cols)}
     
-    # Use all columns from Oracle (we assume they exist in Postgres, else skip)
     mismatches = []
     for col in oracle_cols:
         if col not in postgres_dict:
@@ -195,56 +192,62 @@ def reconcile_table(table: str, source_numbers: List[str]):
     pg_conn = get_postgres_connection()
     
     try:
-        # Get primary key (must be same name in both DBs)
         pk = get_primary_key_oracle(ora_conn, table)
-        # Verify Postgres has same primary key (optional, but we trust)
         
-        # Fetch rows
         oracle_rows = fetch_oracle_rows(ora_conn, table, pk, source_numbers)
         pg_rows = fetch_postgres_rows(pg_conn, table, pk, source_numbers)
         
-        print(f"  Oracle rows: {len(oracle_rows)} | Postgres rows: {len(pg_rows)}")
+        # Print row counts
+        print(f"  SOURCENUMBER found - Oracle : {len(oracle_rows)} | Postgres : {len(pg_rows)}")
         
-        # Compare matching primary keys
-        all_pks = set(oracle_rows.keys()) | set(pg_rows.keys())
-        mismatches_by_pk = {}
+        # Check for missing sides
+        missing_in_oracle = set(pg_rows.keys()) - set(oracle_rows.keys())
+        missing_in_postgres = set(oracle_rows.keys()) - set(pg_rows.keys())
         
-        for pk_val in all_pks:
-            o_data = oracle_rows.get(pk_val)
-            p_data = pg_rows.get(pk_val)
-            
-            if o_data is None:
-                mismatches_by_pk[pk_val] = {"status": "missing_in_oracle", "diffs": []}
-                continue
-            if p_data is None:
-                mismatches_by_pk[pk_val] = {"status": "missing_in_postgres", "diffs": []}
-                continue
-            
-            oracle_cols, oracle_row = o_data
-            pg_cols, pg_row = p_data
+        if missing_in_oracle:
+            print(f"  ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s) (present only in Postgres)")
+        if missing_in_postgres:
+            print(f"  ⚠️ Missing in Postgres: {len(missing_in_postgres)} row(s) (present only in Oracle)")
+        
+        # Compare common rows and collect mismatches
+        mismatches_found = False
+        common_pks = set(oracle_rows.keys()) & set(pg_rows.keys())
+        
+        for pk_val in common_pks:
+            oracle_cols, oracle_row = oracle_rows[pk_val]
+            pg_cols, pg_row = pg_rows[pk_val]
             diffs = compare_rows(oracle_row, oracle_cols, pg_row, pg_cols)
+            
             if diffs:
-                mismatches_by_pk[pk_val] = {"status": "mismatch", "diffs": diffs}
-        
-        # Output results
-        if not mismatches_by_pk:
-            print("  ✅ All rows match perfectly.")
-        else:
-            print(f"  ⚠️ Found {len(mismatches_by_pk)} rows with issues.")
-            for pk_val, info in mismatches_by_pk.items():
-                print(f"\n    Primary key: {pk_val}  [{info['status']}]")
-                for diff in info['diffs']:
-                    print(f"      {diff['column']}:")
+                if not mismatches_found:
+                    print("\n  Mismatches:")
+                    mismatches_found = True
+                for diff in diffs:
+                    print(f"    • {diff['column']}:")
                     print(f"        CEX01_OWN.{diff['column']} : {diff['oracle']}")
                     print(f"        sba_own.{diff['column']}   : {diff['postgres']}")
+                print()  # blank line between rows if multiple
+        
+        if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
+            print("  No mismatch found.")
         
         # Save JSON report
+        mismatches_dict = {}
+        for pk_val in common_pks:
+            oracle_cols, oracle_row = oracle_rows[pk_val]
+            pg_cols, pg_row = pg_rows[pk_val]
+            diffs = compare_rows(oracle_row, oracle_cols, pg_row, pg_cols)
+            if diffs:
+                mismatches_dict[str(pk_val)] = diffs
+        
         report = {
             "table": table,
             "source_numbers": source_numbers,
             "oracle_rows": len(oracle_rows),
             "postgres_rows": len(pg_rows),
-            "issues": mismatches_by_pk
+            "missing_in_oracle": list(missing_in_oracle),
+            "missing_in_postgres": list(missing_in_postgres),
+            "mismatches": mismatches_dict
         }
         with open(f"report_{table}.json", "w") as f:
             json.dump(report, f, indent=2, default=str)
