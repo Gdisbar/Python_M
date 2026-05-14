@@ -107,16 +107,16 @@ def reconcile_table(table):
     print(f"\n--- Processing table: {table} ---")
     ora_conn = get_oracle_conn()
     pg_conn = get_postgres_conn()
-    
+   
     try:
         oracle = fetch_oracle_rows(ora_conn, table)
         postgres = fetch_postgres_rows(pg_conn, table)
-       
+      
         print(f" SOURCENUMBER found - Oracle : {len(oracle)} | Postgres : {len(postgres)}")
-       
+      
         missing_in_oracle = set(postgres.keys()) - set(oracle.keys())
         missing_in_postgres = set(oracle.keys()) - set(postgres.keys())
-       
+      
         if missing_in_oracle:
             print(f" ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s)")
         if missing_in_postgres:
@@ -138,35 +138,34 @@ def reconcile_table(table):
         for sn in common:
             o = oracle[sn]
             p = postgres[sn]
-            
-            o_dict = {o['cols'][i]: o['vals'][i] for i in range(len(o['cols']))}
-            p_dict = {p['cols'][i]: p['vals'][i] for i in range(len(p['cols']))}
-            
+           
+            # === KEY FIX: Normalize column names to UPPERCASE ===
+            o_dict = {o['cols'][i].upper(): o['vals'][i] for i in range(len(o['cols']))}
+            p_dict = {p['cols'][i].upper(): p['vals'][i] for i in range(len(p['cols']))}
+           
             row_mismatches = {}
-            
-            # Check all columns from Oracle + any extra in Postgres
-            all_columns = set(o_dict.keys()) | set(p_dict.keys())
-            
-            for col in sorted(all_columns):
-                oval = o_dict.get(col)
-                pval = p_dict.get(col)
+            all_columns = sorted(set(o_dict.keys()) | set(p_dict.keys()))
+           
+            for col_upper in all_columns:
+                oval = o_dict.get(col_upper)
+                pval = p_dict.get(col_upper)
                 
-                if col not in p_dict:
-                    row_mismatches[col] = {
+                if col_upper not in p_dict:
+                    row_mismatches[col_upper] = {
                         "oracle": oval,
                         "postgres": "<column_missing>"
                     }
-                elif col not in o_dict:
-                    row_mismatches[col] = {
+                elif col_upper not in o_dict:
+                    row_mismatches[col_upper] = {
                         "oracle": "<column_missing>",
                         "postgres": pval
                     }
                 elif not values_equal(oval, pval):
-                    row_mismatches[col] = {
+                    row_mismatches[col_upper] = {
                         "oracle": oval,
                         "postgres": pval
                     }
-            
+
             if row_mismatches:
                 mismatches_found = True
                 report["mismatches_by_sourcenumber"][sn] = {
@@ -174,24 +173,23 @@ def reconcile_table(table):
                     "columns": row_mismatches
                 }
                 
-                # Console output (cleaner)
+                # Console output
                 print(f"\n🔴 Mismatch found for SOURCENUMBER: {sn}")
                 for col, diff in row_mismatches.items():
-                    print(f"   • {col:25} | Oracle: {diff['oracle']} | Postgres: {diff['postgres']}")
+                    print(f" • {col:30} | Oracle: {diff['oracle']} | Postgres: {diff['postgres']}")
 
         if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
             print(" ✅ No mismatch found.")
 
-        # Save improved JSON
+        # Save JSON
         with open(f"report_{table}.json", "w", encoding='utf-8') as f:
             json.dump(report, f, indent=2, default=str, ensure_ascii=False)
-        
-        print(f" 📄 Clean report saved to report_{table}.json")
+       
+        print(f" 📄 Report saved to report_{table}.json")
 
     finally:
         ora_conn.close()
         pg_conn.close()
-
 
 # ============================================================================
 # Main
