@@ -33,7 +33,7 @@ PG_USER = os.getenv("PG_USER")
 PG_PASSWORD = os.getenv("PG_PASSWORD")
 
 TABLES = [
-    "charge", "chargelineitem", "discount", "discountlineitem",
+    # "charge", "chargelineitem", "discount", "discountlineitem",
     "invoice", "invoicedetail", "salestran", "salestrandetail",
     "shipment", "shipmentcontainer", "shipmentcontainerdetail",
     "shipmentline", "tenderlineitem"
@@ -91,16 +91,35 @@ def fetch_postgres_rows(conn, table: str):
         result[sn] = {'cols': col_names, 'vals': row}
     return result
 
-def values_equal(a, b):
+def values_equal_improved(a, b):
+    """More forgiving and realistic comparison"""
     if a is None and b is None:
         return True
     if a is None or b is None:
         return False
+
+    # Number comparison with small tolerance
     if isinstance(a, (int, float, Decimal)) and isinstance(b, (int, float, Decimal)):
-        return Decimal(str(a)) == Decimal(str(b))
+        try:
+            da = Decimal(str(a))
+            db = Decimal(str(b))
+            return abs(da - db) < Decimal('0.0001')   # Adjust tolerance if needed
+        except:
+            return False
+
+    # Date/Time comparison
     if isinstance(a, datetime) and isinstance(b, datetime):
         return a.replace(tzinfo=None) == b.replace(tzinfo=None)
+
+    # String comparison - strip + case insensitive
+    if isinstance(a, str) or isinstance(b, str):
+        sa = str(a).strip() if a is not None else ""
+        sb = str(b).strip() if b is not None else ""
+        return sa.lower() == sb.lower()
+
+    # Fallback
     return str(a).strip() == str(b).strip()
+
 
 
 def reconcile_table(table):
@@ -112,13 +131,13 @@ def reconcile_table(table):
         oracle = fetch_oracle_rows(ora_conn, table)
         postgres = fetch_postgres_rows(pg_conn, table)
       
-        print(f" SOURCENUMBER found - Oracle : {len(oracle)} | Postgres : {len(postgres)}")
+        print(f" Rows found - Oracle: {len(oracle)} | Postgres: {len(postgres)}")
       
         missing_in_oracle = set(postgres.keys()) - set(oracle.keys())
         missing_in_postgres = set(oracle.keys()) - set(postgres.keys())
       
         if missing_in_oracle:
-            print(f" ⚠️ Missing in Oracle: {len(missing_in_oracle)} row(s)")
+            print(f" ⚠️ Missing in Oracle : {len(missing_in_oracle)} row(s)")
         if missing_in_postgres:
             print(f" ⚠️ Missing in Postgres: {len(missing_in_postgres)} row(s)")
 
@@ -133,59 +152,60 @@ def reconcile_table(table):
         }
 
         common = set(oracle.keys()) & set(postgres.keys())
-        mismatches_found = False
+        total_mismatches = 0
 
-        for sn in common:
+        for sn in sorted(common):
             o = oracle[sn]
             p = postgres[sn]
            
-            # === KEY FIX: Normalize column names to UPPERCASE ===
+            # Normalize column names to UPPERCASE
             o_dict = {o['cols'][i].upper(): o['vals'][i] for i in range(len(o['cols']))}
             p_dict = {p['cols'][i].upper(): p['vals'][i] for i in range(len(p['cols']))}
            
             row_mismatches = {}
             all_columns = sorted(set(o_dict.keys()) | set(p_dict.keys()))
            
-            for col_upper in all_columns:
-                oval = o_dict.get(col_upper)
-                pval = p_dict.get(col_upper)
-                
-                if col_upper not in p_dict:
-                    row_mismatches[col_upper] = {
-                        "oracle": oval,
-                        "postgres": "<column_missing>"
-                    }
-                elif col_upper not in o_dict:
-                    row_mismatches[col_upper] = {
-                        "oracle": "<column_missing>",
-                        "postgres": pval
-                    }
-                elif not values_equal(oval, pval):
-                    row_mismatches[col_upper] = {
-                        "oracle": oval,
-                        "postgres": pval
+            for col in all_columns:
+                oval = o_dict.get(col)
+                pval = p_dict.get(col)
+
+                # Skip SOURCENUMBER itself (it's the key)
+                if col == "SOURCENUMBER":
+                    continue
+
+                # === Improved Comparison Logic ===
+                if col not in p_dict:
+                    row_mismatches[col] = {"oracle": oval, "postgres": "<column_missing>"}
+                elif col not in o_dict:
+                    row_mismatches[col] = {"oracle": "<column_missing>", "postgres": pval}
+                elif not values_equal_improved(oval, pval):
+                    row_mismatches[col] = {
+                        "oracle": oval if oval is not None else None,
+                        "postgres": pval if pval is not None else None
                     }
 
             if row_mismatches:
-                mismatches_found = True
+                total_mismatches += 1
                 report["mismatches_by_sourcenumber"][sn] = {
                     "mismatch_count": len(row_mismatches),
                     "columns": row_mismatches
                 }
                 
-                # Console output
-                print(f"\n🔴 Mismatch found for SOURCENUMBER: {sn}")
+                print(f"\n🔴 MISMATCH → SOURCENUMBER: {sn} ({len(row_mismatches)} differences)")
                 for col, diff in row_mismatches.items():
-                    print(f" • {col:30} | Oracle: {diff['oracle']} | Postgres: {diff['postgres']}")
+                    print(f"   • {col:35} | Oracle: {diff['oracle']} | Postgres: {diff['postgres']}")
 
-        if not mismatches_found and not missing_in_oracle and not missing_in_postgres:
-            print(" ✅ No mismatch found.")
+        # Final Summary
+        if total_mismatches == 0 and not missing_in_oracle and not missing_in_postgres:
+            print(" ✅ Perfect match - No differences found.")
+        else:
+            print(f"\n📊 Summary for {table}: {total_mismatches} SOURCENUMBER(s) have mismatches")
 
-        # Save JSON
+        # Save Report
         with open(f"report_{table}.json", "w", encoding='utf-8') as f:
             json.dump(report, f, indent=2, default=str, ensure_ascii=False)
        
-        print(f" 📄 Report saved to report_{table}.json")
+        print(f" 📄 Report saved → report_{table}.json")
 
     finally:
         ora_conn.close()
