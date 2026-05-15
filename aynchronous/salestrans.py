@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Specialized Reconciliation for SALESTRAN Table
-AlloyDB ↔ On-Prem with Both-Side Data Type Awareness
-"""
-
 import os
 import sys
 import json
@@ -24,8 +18,7 @@ if not SOURCE_NUMBERS:
     print("❌ No SOURCE_NUMBERS defined in .env")
     sys.exit(1)
 
-# ========================== COMPLETE MAPPING WITH BOTH DATA TYPES ==========================
-# Format: AlloyDB_Col: (OnPrem_Col, AlloyDB_Type, OnPrem_Type)
+# ========================== COMPLETE MAPPING ==========================
 COLUMN_MAPPING = {
     "SALESTRANID": ("SALESTRANID", "int8", "NUMBER"),
     "ORDERTRANDATE": ("ORDERTRANDATE", "timestamp(0)", "DATE"),
@@ -94,66 +87,50 @@ COLUMN_MAPPING = {
     "TOTALEARNEDSAVINGS": ("TOTALEARNEDSAVINGS", "numeric(19, 6)", "NUMBER(19,6)"),
 }
 
-# ========================== COMPARISON FUNCTION ==========================
+# ========================== HELPERS ==========================
 def normalize_value(val):
     if isinstance(val, str):
         return unicodedata.normalize('NFKC', val.strip())
     return val
 
 def values_equal(a, b, alloy_type=None, onprem_type=None):
-    """Compare values considering both database types"""
     if a is None and b is None:
         return True
     if a is None or b is None:
-        # Treat empty string as NULL
-        if str(a).strip() == "" and str(b).strip() == "":
-            return True
-        return False
+        return str(a).strip() == "" and str(b).strip() == ""
 
     a = normalize_value(a)
     b = normalize_value(b)
 
     try:
-        # Numeric fields (most important for amounts)
-        if any(t and 'numeric' in t.lower() or t in ('int8','int4','NUMBER','decimal') 
+        if any(t and ('numeric' in str(t).lower() or t in ('int8','int4','NUMBER','decimal')) 
                for t in [alloy_type, onprem_type]):
             da = Decimal(str(a))
             db = Decimal(str(b))
             return abs(da - db) <= Decimal('0.01')
 
-        # Date / Timestamp
-        elif any(t and 'time' in t.lower() or t == 'DATE' for t in [alloy_type, onprem_type]):
+        elif any(t and ('time' in str(t).lower() or t == 'DATE') for t in [alloy_type, onprem_type]):
             if isinstance(a, datetime) and isinstance(b, datetime):
                 return a.replace(microsecond=0) == b.replace(microsecond=0)
             return str(a)[:19] == str(b)[:19]
 
-        # String fields
         else:
             return str(a).strip().lower() == str(b).strip().lower()
-
-    except Exception:
+    except:
         return str(a).strip().lower() == str(b).strip().lower()
 
 
-# ========================== CONNECTIONS ==========================
 def get_oracle_conn():
-    return oracledb.connect(
-        user=os.getenv("ORACLE_USER"),
-        password=os.getenv("ORACLE_PASSWORD"),
-        dsn=os.getenv("ORACLE_DSN")
-    )
+    return oracledb.connect(user=os.getenv("ORACLE_USER"), password=os.getenv("ORACLE_PASSWORD"), dsn=os.getenv("ORACLE_DSN"))
 
 def get_postgres_conn():
     return psycopg2.connect(
-        host=os.getenv("PG_HOST"),
-        port=os.getenv("PG_PORT", "5432"),
-        dbname=os.getenv("PG_DATABASE"),
-        user=os.getenv("PG_USER"),
-        password=os.getenv("PG_PASSWORD")
+        host=os.getenv("PG_HOST"), port=os.getenv("PG_PORT", "5432"),
+        dbname=os.getenv("PG_DATABASE"), user=os.getenv("PG_USER"), password=os.getenv("PG_PASSWORD")
     )
 
 
-# ========================== MAIN ==========================
+# ========================== MAIN RECONCILIATION ==========================
 def reconcile_salestran():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     txt_log = f"reconcile_salestran_{timestamp}.txt"
@@ -163,7 +140,7 @@ def reconcile_salestran():
         print("SALESTRAN RECONCILIATION REPORT (AlloyDB ↔ On-Prem)")
         print(f"Run Time      : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Source Numbers: {SOURCE_NUMBERS}")
-        print("=" * 110)
+        print("=" * 130)
 
         ora_conn = get_oracle_conn()
         pg_conn = get_postgres_conn()
@@ -183,7 +160,6 @@ def reconcile_salestran():
             pg_rows = cur.fetchall()
             cur.close()
 
-            # Build dictionaries
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCENUMBER")])
@@ -202,20 +178,18 @@ def reconcile_salestran():
                 "postgres_row_count": sum(len(v) for v in postgres_data.values()),
                 "missing_in_oracle": list(set(postgres_data.keys()) - set(oracle_data.keys())),
                 "missing_in_postgres": list(set(oracle_data.keys()) - set(postgres_data.keys())),
-                "duplicates": {
-                    "oracle": {k: len(v) for k, v in oracle_data.items() if len(v) > 1},
-                    "postgres": {k: len(v) for k, v in postgres_data.items() if len(v) > 1}
-                },
-                "mismatches_by_sourcenumber": {}
+                "mismatches_by_sourcenumber": {},
+                "renamed_columns_comparison": {}          # ← New section for renamed columns
             }
 
             common_sns = set(oracle_data.keys()) & set(postgres_data.keys())
-            total_mismatches = 0
 
             for sn in sorted(common_sns):
                 o_row = oracle_data[sn][0]
                 p_row = postgres_data[sn][0]
+
                 mismatches = {}
+                renamed_comparisons = {}
 
                 for pg_col, (ora_col, alloy_type, onprem_type) in COLUMN_MAPPING.items():
                     if pg_col.upper() == "SOURCENUMBER":
@@ -223,6 +197,8 @@ def reconcile_salestran():
 
                     pg_val = p_row.get(pg_col.upper())
                     ora_val = o_row.get(ora_col) if ora_col else None
+
+                    is_renamed = (pg_col.upper() != (ora_col or "").upper())
 
                     if not values_equal(pg_val, ora_val, alloy_type, onprem_type):
                         mismatches[pg_col] = {
@@ -232,9 +208,16 @@ def reconcile_salestran():
                             "onprem_column": ora_col,
                             "onprem_type": onprem_type
                         }
+                    elif is_renamed:
+                        # Show renamed columns even if values match
+                        renamed_comparisons[pg_col] = {
+                            "alloydb_value": pg_val,
+                            "onprem_value": ora_val,
+                            "onprem_column": ora_col
+                        }
 
+                # Save mismatches
                 if mismatches:
-                    total_mismatches += 1
                     report["mismatches_by_sourcenumber"][sn] = {
                         "mismatch_count": len(mismatches),
                         "columns": mismatches
@@ -242,30 +225,38 @@ def reconcile_salestran():
 
                     print(f"\n🔴 MISMATCH → SOURCENUMBER: {sn}  ({len(mismatches)} differences)")
                     for col, diff in mismatches.items():
-                        print(f"   • {col:40} | AlloyDB : {diff['alloydb_value']}  ({diff['alloydb_type']})")
-                        print(f"   {'':40} | On-Prem : {diff['onprem_value']}  ({diff['onprem_column']}, {diff['onprem_type']})")
+                        print(f"   • {col:40} | AlloyDB : {diff['alloydb_value']}  ({diff.get('alloydb_type')})")
+                        print(f"   {'':40} | On-Prem : {diff['onprem_value']}  ({diff['onprem_column']})")
 
-            # Summary
-            print("\n" + "="*110)
+                # Show renamed columns (even if matched)
+                if renamed_comparisons:
+                    report["renamed_columns_comparison"][sn] = renamed_comparisons
+                    print(f"\n🔄 Renamed Columns (Values Matched) → SOURCENUMBER: {sn}")
+                    for col, info in renamed_comparisons.items():
+                        print(f"   • {col:40} → {info['onprem_column']:25} | Value: {info['alloydb_value']}")
+
+            # Final Summary
+            print("\n" + "="*130)
             print("FINAL SUMMARY")
-            print("="*110)
+            print("="*130)
             print(f"Total SOURCENUMBERs Compared : {len(common_sns)}")
-            print(f"Records with Mismatches      : {total_mismatches}")
+            print(f"SOURCENUMBERs with Mismatches: {len(report['mismatches_by_sourcenumber'])}")
             print(f"Missing in Oracle            : {len(report['missing_in_oracle'])}")
             print(f"Missing in On-Prem           : {len(report['missing_in_postgres'])}")
 
+            # Save Reports
             with open(json_report, "w", encoding='utf-8') as jf:
                 json.dump(report, jf, indent=2, default=str, ensure_ascii=False)
 
-            print(f"\n✅ Done!")
-            print(f"📝 Text Log    → {txt_log}")
-            print(f"📊 JSON Report → {json_report}")
+            print(f"\n✅ Reconciliation Completed!")
+            print(f"📝 Detailed Log : {txt_log}")
+            print(f"📊 JSON Report  : {json_report}")
 
         finally:
             ora_conn.close()
             pg_conn.close()
 
-    print(f"\n🎉 Process completed. Check {txt_log} for full details.")
+    print(f"\n🎉 Process finished. Check {txt_log} for complete output.")
 
 
 if __name__ == "__main__":
