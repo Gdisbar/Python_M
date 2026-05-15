@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Specialized Reconciliation for SALESTRAN Table
-AlloyDB (Postgres) ↔ On-Prem (Oracle)
-Console output + JSON report + TXT log
+AlloyDB ↔ On-Prem with Both-Side Data Type Awareness
 """
 
 import os
@@ -25,102 +24,118 @@ if not SOURCE_NUMBERS:
     print("❌ No SOURCE_NUMBERS defined in .env")
     sys.exit(1)
 
-# ========================== COLUMN MAPPING ==========================
+# ========================== COMPLETE MAPPING WITH BOTH DATA TYPES ==========================
+# Format: AlloyDB_Col: (OnPrem_Col, AlloyDB_Type, OnPrem_Type)
 COLUMN_MAPPING = {
-    "SALESTRANID": "SALESTRANID",
-    "ORDERTRANDATE": "ORDERTRANDATE",
-    "SOURCEINSERTDATE": "SOURCEINSERTDATE",
-    "SOURCESYSTEMID": "SOURCESYSTEMID",
-    "SOURCEUPDATEDATE": "SOURCEUPDATEDATE",
-    "SOURCENUMBER": "SOURCENUMBER",
-    "INSERTDATE": "INSERTDATE",
-    "UPDATEDATE": "UPDATEDATE",
-    "OHLINK": "SOURCEHEADERID2",
-    "SOURCEINSERTUSERID": "SOURCEINSERTUSERID",
-    "SOURCEUPDATEUSERID": "SOURCEUPDATEUSERID",
-    "OHCONO": "SOURCEHEADERID3",
-    "TRANTYPE": "TRANTYPE",
-    "TRANMETHOD": "TRANMETHOD",
-    "RECORDTYPE": "RECORDTYPE",
-    "TRANAMOUNT": "TRANAMOUNT",
-    "DIVISIONCODE": "DIVISIONCODE",
-    "CUSTOMERPONUMBER": "CUSTOMERPONUMBER",
-    "BILLTOCOMPANY": "BILLTOCOMPANY",
-    "BILLTOADDRESS1": "BILLTOADDRESS1",
-    "BILLTOADDRESS2": "BILLTOADDRESS2",
-    "BILLTOADDRESS3": "BILLTOADDRESS3",
-    "BILLTOCITY": "BILLTOCITY",
-    "BILLTOSTATE": "BILLTOSTATE",
-    "BILLTOZIP": "BILLTOZIP",
-    "BILLTOPHONE": "BILLTOPHONE",
-    "BILLTOCOUNTRY": "BILLTOCOUNTRY",
-    "SUPPLIER": "SUPPLIER",
-    "SHIPTOFIRSTNAME": "SHIPTOFIRSTNAME",
-    "SHIPTOLASTNAME": "SHIPTOLASTNAME",
-    "SHIPTOCOMPANY": "SHIPTOCOMPANY",
-    "SHIPTOADDRESS1": "SHIPTOADDRESS1",
-    "SHIPTOADDRESS2": "SHIPTOADDRESS2",
-    "SHIPTOADDRESS3": "SHIPTOADDRESS3",
-    "SHIPTOCITY": "SHIPTOCITY",
-    "SHIPTOSTATE": "SHIPTOSTATE",
-    "SHIPTOZIP": "SHIPTOZIP",
-    "SHIPTOCOUNTRY": "SHIPTOCOUNTRY",
-    "SHIPTONUMBER": "SHIPTONUMBER",
-    "SOURCESHIPTOID": "SOURCESHIPTOID",
-    "PURCHASEORDERRELEASENAME": "PURCHASEORDERRELEASENAME",
-    "ORDERERUSERID": "ORDERERUSERID",
-    "ORDERERFIRSTNAME": "ORDERERFIRSTNAME",
-    "ORDERERLASTNAME": "ORDERERLASTNAME",
-    "ORDEREREMAILADDRESS": "ORDEREREMAILADDRESS",
-    "ENTERPRISECODE": "ENTERPRISECODE",
-    "MASTERNUMBER": "MASTERNUMBER",
-    "BUDGETCENTERNAME": "BUDGETCENTERNAME",
-    "LINELEVELBUDGET": "LINELEVELBUDGET",
-    "TRANSTATUSNUMBER": "TRANSTATUSNUMBER",
-    "SOURCEBILLTONUMBER": "SOURCEBILLTONUMBER",
-    "SAVINGS_MEMBERSHIPTYPE": "SAVINGS_MEMBERSHIPTYPE",
-    "SHIPTOSTATUS": "SHIPTOSTATUS",
-    "ORDERERPHONENUMBER": "ORDERERPHONUMBER",
-    "SELLERSUBCODE": "SELLERSUBCODE",
-    "SHIPTOPHONE": "SHIPTOPHONE",
-    "BILLTO_ID": "BILLTO_ID",
-    "FURNITURERECEIVERFNAME": "FURNITURERECEIVERFNAME",
-    "FURNITURERECEIVERLNAME": "FURNITURERECEIVERLNAME",
-    "FURNITURERECEIVEREMAIL": "FURNITURERECEIVEREMAIL",
-    "FURNITURERECEIVERPHONE": "FURNITURERECEIVERPHONE",
-    "ORDERSOURCE": "ORDERSOURCE",
-    "HEADERLEVELSAVINGS": "HEADERLEVELSAVINGS",
-    "HEADERLEVELSAVINGSTYPECOD": "HEADERLEVELSAVINGSTYPECOD",
-    "TOTALEARNEDSAVINGS": "TOTALEARNEDSAVINGS",
+    "SALESTRANID": ("SALESTRANID", "int8", "NUMBER"),
+    "ORDERTRANDATE": ("ORDERTRANDATE", "timestamp(0)", "DATE"),
+    "SOURCEINSERTDATE": ("SOURCEINSERTDATE", "timestamp(0)", "DATE"),
+    "SOURCESYSTEMID": ("SOURCESYSTEMID", "int4", "NUMBER"),
+    "SOURCEUPDATEDATE": ("SOURCEUPDATEDATE", "timestamp(0)", "DATE"),
+    "SOURCENUMBER": ("SOURCENUMBER", "varchar(50)", "VARCHAR2(50)"),
+    "INSERTDATE": ("INSERTDATE", "timestamp(0)", "DATE"),
+    "UPDATEDATE": ("UPDATEDATE", "timestamp(0)", "DATE"),
+    "OHLINK": ("SOURCEHEADERID2", "varchar(100)", None),
+    "SOURCEINSERTUSERID": ("SOURCEINSERTUSERID", "varchar(50)", "VARCHAR2(50)"),
+    "SOURCEUPDATEUSERID": ("SOURCEUPDATEUSERID", "varchar(50)", "VARCHAR2(50)"),
+    "OHCONO": ("SOURCEHEADERID3", "varchar(100)", None),
+    "TRANTYPE": ("TRANTYPE", "varchar(50)", "VARCHAR2(50)"),
+    "TRANMETHOD": ("TRANMETHOD", "varchar(50)", "VARCHAR2(50)"),
+    "RECORDTYPE": ("RECORDTYPE", "varchar(50)", "VARCHAR2(50)"),
+    "TRANAMOUNT": ("TRANAMOUNT", "numeric(19, 6)", "NUMBER(19,6)"),
+    "DIVISIONCODE": ("DIVISIONCODE", "varchar(50)", "VARCHAR2(50)"),
+    "CUSTOMERPONUMBER": ("CUSTOMERPONUMBER", "varchar(50)", "VARCHAR2(50)"),
+    "BILLTOCOMPANY": ("BILLTOCOMPANY", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOADDRESS1": ("BILLTOADDRESS1", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOADDRESS2": ("BILLTOADDRESS2", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOADDRESS3": ("BILLTOADDRESS3", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOCITY": ("BILLTOCITY", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOSTATE": ("BILLTOSTATE", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOZIP": ("BILLTOZIP", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOPHONE": ("BILLTOPHONE", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTOCOUNTRY": ("BILLTOCOUNTRY", "varchar(100)", "VARCHAR2(100)"),
+    "SUPPLIER": ("SUPPLIER", "varchar(3)", "VARCHAR2(3)"),
+    "SHIPTOFIRSTNAME": ("SHIPTOFIRSTNAME", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOLASTNAME": ("SHIPTOLASTNAME", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOCOMPANY": ("SHIPTOCOMPANY", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOADDRESS1": ("SHIPTOADDRESS1", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOADDRESS2": ("SHIPTOADDRESS2", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOADDRESS3": ("SHIPTOADDRESS3", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOCITY": ("SHIPTOCITY", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOSTATE": ("SHIPTOSTATE", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOZIP": ("SHIPTOZIP", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTOCOUNTRY": ("SHIPTOCOUNTRY", "varchar(100)", "VARCHAR2(100)"),
+    "SHIPTONUMBER": ("SHIPTONUMBER", "varchar(100)", "VARCHAR2(100)"),
+    "SOURCESHIPTOID": ("SOURCESHIPTOID", "varchar(50)", "VARCHAR2(50)"),
+    "PURCHASEORDERRELEASENAME": ("PURCHASEORDERRELEASENAME", "varchar(100)", "VARCHAR2(100)"),
+    "ORDERERUSERID": ("ORDERERUSERID", "varchar(50)", "VARCHAR2(50)"),
+    "ORDERERFIRSTNAME": ("ORDERERFIRSTNAME", "varchar(100)", "VARCHAR2(100)"),
+    "ORDERERLASTNAME": ("ORDERERLASTNAME", "varchar(100)", "VARCHAR2(100)"),
+    "ORDEREREMAILADDRESS": ("ORDEREREMAILADDRESS", "varchar(300)", "VARCHAR2(300)"),
+    "ENTERPRISECODE": ("ENTERPRISECODE", "varchar(50)", "VARCHAR2(50)"),
+    "MASTERNUMBER": ("MASTERNUMBER", "varchar(40)", "VARCHAR2(40)"),
+    "BUDGETCENTERNAME": ("BUDGETCENTERNAME", "varchar(100)", "VARCHAR2(100)"),
+    "LINELEVELBUDGET": ("LINELEVELBUDGET", "varchar(1)", "VARCHAR2(1)"),
+    "TRANSTATUSNUMBER": ("TRANSTATUSNUMBER", "varchar(50)", "VARCHAR2(50)"),
+    "SOURCEBILLTONUMBER": ("SOURCEBILLTONUMBER", "varchar(14)", "VARCHAR2(14)"),
+    "SAVINGS_MEMBERSHIPTYPE": ("SAVINGS_MEMBERSHIPTYPE", "varchar(20)", "VARCHAR2(20)"),
+    "SHIPTOSTATUS": ("SHIPTOSTATUS", "varchar(3)", "VARCHAR2(3)"),
+    "ORDERERPHONENUMBER": ("ORDERERPHONENUMBER", "varchar(12)", "VARCHAR2(12)"),
+    "SELLERSUBCODE": ("SELLERSUBCODE", "varchar(50)", "VARCHAR2(50)"),
+    "SHIPTOPHONE": ("SHIPTOPHONE", "varchar(100)", "VARCHAR2(100)"),
+    "BILLTO_ID": ("BILLTO_ID", "varchar(14)", "VARCHAR2(14)"),
+    "FURNITURERECEIVERFNAME": ("FURNITURERECEIVERFNAME", "varchar(254)", "VARCHAR2(254)"),
+    "FURNITURERECEIVERLNAME": ("FURNITURERECEIVERLNAME", "varchar(80)", "VARCHAR2(80)"),
+    "FURNITURERECEIVEREMAIL": ("FURNITURERECEIVEREMAIL", "varchar(254)", "VARCHAR2(254)"),
+    "FURNITURERECEIVERPHONE": ("FURNITURERECEIVERPHONE", "varchar(10)", "VARCHAR2(10)"),
+    "ORDERSOURCE": ("ORDERSOURCE", "varchar(1)", "VARCHAR2(1)"),
+    "HEADERLEVELSAVINGS": ("HEADERLEVELSAVINGS", "numeric(19, 6)", "NUMBER(19,6)"),
+    "HEADERLEVELSAVINGSTYPECOD": ("HEADERLEVELSAVINGSTYPECOD", "varchar(50)", "VARCHAR2(50)"),
+    "TOTALEARNEDSAVINGS": ("TOTALEARNEDSAVINGS", "numeric(19, 6)", "NUMBER(19,6)"),
 }
 
-# ========================== HELPERS ==========================
+# ========================== COMPARISON FUNCTION ==========================
 def normalize_value(val):
     if isinstance(val, str):
         return unicodedata.normalize('NFKC', val.strip())
     return val
 
-def values_equal(a, b):
+def values_equal(a, b, alloy_type=None, onprem_type=None):
+    """Compare values considering both database types"""
     if a is None and b is None:
         return True
     if a is None or b is None:
+        # Treat empty string as NULL
+        if str(a).strip() == "" and str(b).strip() == "":
+            return True
         return False
 
     a = normalize_value(a)
     b = normalize_value(b)
 
-    if isinstance(a, (int, float, Decimal)) and isinstance(b, (int, float, Decimal)):
-        try:
-            return abs(Decimal(str(a)) - Decimal(str(b))) < Decimal('0.0001')
-        except:
-            return False
+    try:
+        # Numeric fields (most important for amounts)
+        if any(t and 'numeric' in t.lower() or t in ('int8','int4','NUMBER','decimal') 
+               for t in [alloy_type, onprem_type]):
+            da = Decimal(str(a))
+            db = Decimal(str(b))
+            return abs(da - db) <= Decimal('0.01')
 
-    if isinstance(a, datetime) and isinstance(b, datetime):
-        return a.replace(tzinfo=None) == b.replace(tzinfo=None)
+        # Date / Timestamp
+        elif any(t and 'time' in t.lower() or t == 'DATE' for t in [alloy_type, onprem_type]):
+            if isinstance(a, datetime) and isinstance(b, datetime):
+                return a.replace(microsecond=0) == b.replace(microsecond=0)
+            return str(a)[:19] == str(b)[:19]
 
-    return str(a).lower() == str(b).lower()
+        # String fields
+        else:
+            return str(a).strip().lower() == str(b).strip().lower()
+
+    except Exception:
+        return str(a).strip().lower() == str(b).strip().lower()
 
 
+# ========================== CONNECTIONS ==========================
 def get_oracle_conn():
     return oracledb.connect(
         user=os.getenv("ORACLE_USER"),
@@ -138,24 +153,23 @@ def get_postgres_conn():
     )
 
 
-# ========================== MAIN FUNCTION ==========================
+# ========================== MAIN ==========================
 def reconcile_salestran():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     txt_log = f"reconcile_salestran_{timestamp}.txt"
     json_report = f"report_salestran_{timestamp}.json"
 
-    # Redirect console output to both terminal + file
     with open(txt_log, "w", encoding="utf-8") as f, redirect_stdout(f):
-        print(f"RECONCILIATION REPORT - SALESTRAN")
-        print(f"Run Date     : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("SALESTRAN RECONCILIATION REPORT (AlloyDB ↔ On-Prem)")
+        print(f"Run Time      : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Source Numbers: {SOURCE_NUMBERS}")
-        print("="*90)
+        print("=" * 110)
 
         ora_conn = get_oracle_conn()
         pg_conn = get_postgres_conn()
 
         try:
-            # Fetch Oracle
+            # Fetch Data
             cur = ora_conn.cursor()
             placeholders = ','.join([f"'{sn}'" for sn in SOURCE_NUMBERS])
             cur.execute(f"SELECT * FROM CEX01_OWN.SALESTRAN WHERE SOURCENUMBER IN ({placeholders})")
@@ -163,14 +177,13 @@ def reconcile_salestran():
             ora_rows = cur.fetchall()
             cur.close()
 
-            # Fetch Postgres (AlloyDB)
             cur = pg_conn.cursor()
             cur.execute(f"SELECT * FROM sba_own.salestran WHERE sourcenumber IN ({placeholders})")
             pg_cols = [desc[0].upper() for desc in cur.description]
             pg_rows = cur.fetchall()
             cur.close()
 
-            # Group by SOURCENUMBER
+            # Build dictionaries
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCENUMBER")])
@@ -197,25 +210,27 @@ def reconcile_salestran():
             }
 
             common_sns = set(oracle_data.keys()) & set(postgres_data.keys())
-
             total_mismatches = 0
+
             for sn in sorted(common_sns):
                 o_row = oracle_data[sn][0]
                 p_row = postgres_data[sn][0]
-
                 mismatches = {}
 
-                for pg_col, ora_col in COLUMN_MAPPING.items():
+                for pg_col, (ora_col, alloy_type, onprem_type) in COLUMN_MAPPING.items():
                     if pg_col.upper() == "SOURCENUMBER":
                         continue
-                    pg_val = p_row.get(pg_col.upper())
-                    ora_val = o_row.get(ora_col.upper() if ora_col else None)
 
-                    if not values_equal(pg_val, ora_val):
+                    pg_val = p_row.get(pg_col.upper())
+                    ora_val = o_row.get(ora_col) if ora_col else None
+
+                    if not values_equal(pg_val, ora_val, alloy_type, onprem_type):
                         mismatches[pg_col] = {
                             "alloydb_value": pg_val,
+                            "alloydb_type": alloy_type,
                             "onprem_value": ora_val,
-                            "onprem_column": ora_col
+                            "onprem_column": ora_col,
+                            "onprem_type": onprem_type
                         }
 
                 if mismatches:
@@ -227,34 +242,30 @@ def reconcile_salestran():
 
                     print(f"\n🔴 MISMATCH → SOURCENUMBER: {sn}  ({len(mismatches)} differences)")
                     for col, diff in mismatches.items():
-                        print(f"   • {col:40} | AlloyDB : {diff['alloydb_value']}")
-                        print(f"   {'':40} | On-Prem : {diff['onprem_value']}  ({diff['onprem_column']})")
+                        print(f"   • {col:40} | AlloyDB : {diff['alloydb_value']}  ({diff['alloydb_type']})")
+                        print(f"   {'':40} | On-Prem : {diff['onprem_value']}  ({diff['onprem_column']}, {diff['onprem_type']})")
 
             # Summary
-            print("\n" + "="*90)
-            print("SUMMARY")
-            print("="*90)
-            print(f"Total SOURCENUMBER processed : {len(common_sns)}")
-            print(f"Total mismatches found       : {total_mismatches}")
+            print("\n" + "="*110)
+            print("FINAL SUMMARY")
+            print("="*110)
+            print(f"Total SOURCENUMBERs Compared : {len(common_sns)}")
+            print(f"Records with Mismatches      : {total_mismatches}")
             print(f"Missing in Oracle            : {len(report['missing_in_oracle'])}")
             print(f"Missing in On-Prem           : {len(report['missing_in_postgres'])}")
 
-            # Save JSON Report
             with open(json_report, "w", encoding='utf-8') as jf:
                 json.dump(report, jf, indent=2, default=str, ensure_ascii=False)
 
-            print(f"\n✅ Reconciliation Completed!")
-            print(f"📄 JSON Report : {json_report}")
-            print(f"📝 Text Log    : {txt_log}")
+            print(f"\n✅ Done!")
+            print(f"📝 Text Log    → {txt_log}")
+            print(f"📊 JSON Report → {json_report}")
 
         finally:
             ora_conn.close()
             pg_conn.close()
 
-    # Also print final message to console
-    print(f"\n🎉 Done! Reports generated:")
-    print(f"   • {txt_log}  (Readable console output)")
-    print(f"   • {json_report} (Structured data)")
+    print(f"\n🎉 Process completed. Check {txt_log} for full details.")
 
 
 if __name__ == "__main__":
