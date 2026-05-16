@@ -38,9 +38,9 @@ COLUMN_MAPPING = {
     "UPDATEDATE": ("UPDATEDATE", "timestamp(0)", "DATE"),
     "TRANCHARGETYPE": ("TRANCHARGETYPE", "varchar(50)", "VARCHAR2(50)"),
     "TRANCHARGECATEGORY": ("TRANCHARGECATEGORY", "varchar(50)", "VARCHAR2(50)"),
-    "TRANCHARGENAME": ("TRARCHARGENAME", "varchar(50)", "VARCHAR2(50)"),
-    "TRANCHARGEDESC": ("TRARCHARGEDESC", "varchar(50)", "VARCHAR2(50)"),
-    "TRARCHARGEAMOUNT": ("TRARCHARGEAMOUNT", "numeric(19, 6)", "NUMBER(19,6)"),
+    "TRANCHARGENAME": ("TRANCHARGENAME", "varchar(50)", "VARCHAR2(50)"),
+    "TRANCHARGEDESC": ("TRANCHARGEDESC", "varchar(50)", "VARCHAR2(50)"),
+    "TRANCHARGEAMOUNT": ("TRANCHARGEAMOUNT", "numeric(19, 6)", "NUMBER(19,6)"),
     "CHARGETAXCODETYPE": ("CHARGETAXCODETYPE", "varchar(10)", "VARCHAR2(10)"),
 }
 
@@ -106,9 +106,9 @@ def fetch_oracle_charge_data(source_numbers):
                 s.UPDATEDATE,
                 s.TRANCHARGETYPE,
                 s.TRANCHARGECATEGORY,
-                s.TARCHARGENAME,
-                s.TARCHARGEDESC,
-                s.TARCHARGEAMOUNT,
+                s.TRANCHARGENAME,
+                s.TRANCHARGEDESC,
+                s.TRANCHARGEAMOUNT,
                 s.CHARGETAXCODETYPE
             FROM CEX01_OWN.SALESTRANCHARGE s
             WHERE SUBSTR(s.SOURCEHEADERKEY, 1, INSTR(s.SOURCEHEADERKEY, '.') - 1) IN ({placeholders})
