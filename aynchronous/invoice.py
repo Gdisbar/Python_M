@@ -165,7 +165,7 @@ def reconcile_invoice():
             ora_cols, ora_rows = fetch_oracle_invoice_data(SOURCE_NUMBERS)
             pg_cols, pg_rows = fetch_postgres_invoice_data(SOURCE_NUMBERS)
 
-            # Group by SOURCENUMBER (multiple rows possible)
+            # Group by SOURCENUMBER (multiple rows)
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCEHEADERID1")])
