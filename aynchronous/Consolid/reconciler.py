@@ -70,41 +70,44 @@ def load_config(config_path: str) -> dict:
 
 
 # ─────────────────────────── WHERE clause resolver ───────────────────────────
-def resolve_where_clause(where_clause: str) -> str:
+def resolve_where_clause(where_clause: str) -> tuple[str, dict]:
     """
     Replace all {ENV_VAR} placeholders with properly quoted SQL values.
+    Returns (resolved_where_string, dict_of_placeholder_values).
     If the environment variable contains commas, each item is individually quoted
     (suitable for IN lists). Otherwise the whole value is single‑quoted.
     """
     if not where_clause.strip():
-        return ""
+        return "", {}
 
-    # Find all {NAME} placeholders
     placeholders = re.findall(r'\{(\w+)\}', where_clause)
     resolved = where_clause
+    values = {}
     for ph in placeholders:
         value = os.getenv(ph)
         if value is None:
             raise ValueError(f"Environment variable '{ph}' is not set (needed for WHERE clause).")
         # If the value contains commas, treat as list of items → each quoted
         if ',' in value:
-            items = [f"'{item.strip()}'" for item in value.split(',') if item.strip()]
-            replacement = ','.join(items)
+            items = [item.strip() for item in value.split(',') if item.strip()]
+            replacement = ','.join(f"'{item}'" for item in items)
+            values[ph] = items
         else:
             replacement = f"'{value.strip()}'"
+            values[ph] = value.strip()
         resolved = resolved.replace(f'{{{ph}}}', replacement)
-    return resolved
+    return resolved, values
 
 
-def build_final_query(base_query: str, where_clause: str) -> str:
-    """Combine base query with resolved WHERE clause."""
+def build_final_query(base_query: str, where_clause: str) -> tuple[str, dict]:
+    """Combine base query with resolved WHERE clause. Returns (sql, values_dict)."""
     base = base_query.strip()
     if not base:
         raise ValueError("base_query is empty.")
-    where = resolve_where_clause(where_clause)
-    if where:
-        return f"{base} WHERE {where}"
-    return base
+    where_str, values = resolve_where_clause(where_clause)
+    if where_str:
+        return f"{base} WHERE {where_str}", values
+    return base, values
 
 
 # ─────────────────────────── DB helpers ─────────────────────────────────────
@@ -287,11 +290,10 @@ def compare_row_pair(
 
         if not values_equal(pg_val, ora_val, pg_type, ora_type):
             mismatches[pg_col] = {
-                "alloydb_col":   pg_col,
                 "alloydb_value": pg_val,
                 "alloydb_type":  pg_type,
-                "onprem_col":    ora_col,
                 "onprem_value":  ora_val,
+                "onprem_column": ora_col,
                 "onprem_type":   ora_type,
                 "derived":       col_cfg.get("derived_in_oracle", False),
             }
@@ -299,7 +301,7 @@ def compare_row_pair(
             renamed_matches[pg_col] = {
                 "alloydb_value": pg_val,
                 "onprem_value":  ora_val,
-                "onprem_col":    ora_col,
+                "onprem_column": ora_col,
             }
 
     return mismatches, renamed_matches
@@ -310,6 +312,7 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
     """
     Full reconciliation for one table.
     Reads config, builds final SQL from base + where, compares, writes reports.
+    Produces a JSON report in the style of the invoice reconciler.
     """
     cfg    = load_config(config_path)
     table  = cfg["table_name"]
@@ -326,25 +329,28 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
     json_path = json_dir / f"report_{table.lower()}_{ts}.json"
 
     # ── Build final SQL ───────────────────────────────────────────────────────
-    oracle_sql = build_final_query(cfg["oracle"]["base_query"], cfg["oracle"].get("where_clause", ""))
-    postgres_sql = build_final_query(cfg["postgres"]["base_query"], cfg["postgres"].get("where_clause", ""))
+    oracle_sql, oracle_vals = build_final_query(cfg["oracle"]["base_query"], cfg["oracle"].get("where_clause", ""))
+    postgres_sql, postgres_vals = build_final_query(cfg["postgres"]["base_query"], cfg["postgres"].get("where_clause", ""))
+
+    # Combine filter values from both sides (usually identical, but safe)
+    filter_values = {}
+    filter_values.update(oracle_vals)
+    filter_values.update(postgres_vals)
 
     logger.info("Starting reconciliation for %s", table)
 
-    # ── Report skeleton ───────────────────────────────────────────────────────
+    # ── Report skeleton (invoice style) ────────────────────────────────────────
     report = {
         "table":                   table,
         "config_file":             str(config_path),
         "reconciled_on":           datetime.now().isoformat(),
-        "oracle_where_template":   cfg["oracle"].get("where_clause", ""),
-        "postgres_where_template": cfg["postgres"].get("where_clause", ""),
+        "filter_values":           filter_values,
         "oracle_row_count":        0,
         "postgres_row_count":      0,
-        "common_group_keys":       0,
         "missing_in_oracle":       [],
         "missing_in_postgres":     [],
-        "mismatches":              {},
-        "renamed_column_matches":  {},
+        "mismatches_by_sourcenumber": {},
+        "renamed_columns_comparison": {},
         "errors":                  [],
     }
 
@@ -359,6 +365,7 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
     log(f"  Run Time     : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log(f"  Oracle WHERE : {cfg['oracle'].get('where_clause', 'none')}")
     log(f"  Postgres WHERE: {cfg['postgres'].get('where_clause', 'none')}")
+    log(f"  Filter values: {filter_values}")
     log(f"{'='*140}")
 
     try:
@@ -380,7 +387,6 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
         missing_in_pg = sorted(set(oracle_grouped)   - set(postgres_grouped))
         missing_in_ora = sorted(set(postgres_grouped) - set(oracle_grouped))
 
-        report["common_group_keys"]   = len(common_keys)
         report["missing_in_oracle"]   = missing_in_ora
         report["missing_in_postgres"] = missing_in_pg
 
@@ -393,7 +399,8 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
         ora_match_key = cfg["oracle"]["match_key"]
         pg_match_key  = cfg["postgres"]["match_key"]
 
-        total_mismatched_groups = 0
+        mismatches_by_sn = {}
+        renamed_comp = {}
 
         for group_key in sorted(common_keys):
             o_rows_grp = oracle_grouped[group_key]
@@ -401,64 +408,81 @@ def reconcile(config_path: str, output_dir: str = "reports") -> dict:
 
             log(f"\n📊 Group key: {group_key}  |  Oracle rows: {len(o_rows_grp)}  Postgres rows: {len(p_rows_grp)}")
 
-            # Match rows by unique key within the group
             pairs = match_rows(o_rows_grp, p_rows_grp, ora_match_key)
-
-            group_has_mismatch = False
-            group_mismatches   = {}
-            group_renamed      = {}
 
             for o_row, p_row in pairs:
                 if o_row is None:
                     pk = p_row.get(pg_match_key.upper(), "?")
                     log(f"   ⚠️  Row key={pk} exists in Postgres but not in Oracle")
-                    group_mismatches[f"only_in_postgres_{pk}"] = {"postgres_row": p_row}
-                    group_has_mismatch = True
+                    mismatches_by_sn[f"{group_key}_{pk}"] = {
+                        "group_key": group_key,
+                        "row_identifier": pk,
+                        "mismatch_count": 1,
+                        "columns": {
+                            "only_in_postgres": {
+                                "alloydb_value": "ROW PRESENT",
+                                "onprem_value": "MISSING",
+                                "onprem_column": "",
+                                "onprem_type": ""
+                            }
+                        }
+                    }
                     continue
                 if p_row is None:
                     pk = o_row.get(ora_match_key.upper(), "?")
                     log(f"   ⚠️  Row key={pk} exists in Oracle but not in Postgres")
-                    group_mismatches[f"only_in_oracle_{pk}"] = {"oracle_row": o_row}
-                    group_has_mismatch = True
+                    mismatches_by_sn[f"{group_key}_{pk}"] = {
+                        "group_key": group_key,
+                        "row_identifier": pk,
+                        "mismatch_count": 1,
+                        "columns": {
+                            "only_in_oracle": {
+                                "alloydb_value": "MISSING",
+                                "onprem_value": "ROW PRESENT",
+                                "onprem_column": "",
+                                "onprem_type": ""
+                            }
+                        }
+                    }
                     continue
 
                 mismatches, renamed = compare_row_pair(o_row, p_row, col_mapping)
-
-                row_id = str(o_row.get(ora_match_key.upper(), "?"))
+                pk = str(o_row.get(ora_match_key.upper(), "?"))
 
                 if mismatches:
-                    group_has_mismatch = True
-                    group_mismatches[row_id] = {
+                    mismatches_by_sn[f"{group_key}_{pk}"] = {
+                        "group_key": group_key,
+                        "row_identifier": pk,
                         "mismatch_count": len(mismatches),
                         "columns": mismatches,
                     }
-                    log(f"   🔴 MISMATCH  row_key={row_id}  ({len(mismatches)} columns differ)")
+                    log(f"   🔴 MISMATCH  row_key={pk}  ({len(mismatches)} columns differ)")
                     for col, diff in mismatches.items():
                         derived_tag = " [DERIVED]" if diff.get("derived") else ""
                         log(
                             f"     • {col:35}{derived_tag}"
                             f"  AlloyDB({diff['alloydb_type']}): {diff['alloydb_value']}"
-                            f"  |  Oracle({diff['onprem_type']}) [{diff['onprem_col']}]: {diff['onprem_value']}"
+                            f"  |  Oracle({diff['onprem_type']}) [{diff['onprem_column']}]: {diff['onprem_value']}"
                         )
                 else:
-                    log(f"   ✅ row_key={row_id}  matches")
+                    log(f"   ✅ row_key={pk}  matches")
 
                 if renamed:
-                    group_renamed[row_id] = renamed
+                    renamed_comp[f"{group_key}_{pk}"] = {
+                        "group_key": group_key,
+                        "row_identifier": pk,
+                        "columns": renamed,
+                    }
 
-            if group_has_mismatch:
-                total_mismatched_groups += 1
-                report["mismatches"][group_key] = group_mismatches
-
-            if group_renamed:
-                report["renamed_column_matches"][group_key] = group_renamed
+        report["mismatches_by_sourcenumber"] = mismatches_by_sn
+        report["renamed_columns_comparison"] = renamed_comp
 
         # ── Summary ────────────────────────────────────────────────────────────
         log(f"\n{'='*140}")
         log("FINAL SUMMARY")
         log(f"{'='*140}")
         log(f"  Total group keys compared    : {len(common_keys)}")
-        log(f"  Groups with mismatches       : {total_mismatched_groups}")
+        log(f"  Total mismatches found       : {len(mismatches_by_sn)}")
         log(f"  Missing in Postgres          : {len(missing_in_pg)}")
         log(f"  Missing in Oracle            : {len(missing_in_ora)}")
         log(f"  Oracle rows fetched          : {report['oracle_row_count']}")
