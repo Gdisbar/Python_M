@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
 """
-DISCOUNT Table Reconciliation (AlloyDB ↔ On-Prem)
-Handles composite key (sourcenumber + ohlink) and multiple rows per source
+discount-SALESTRANDISCOUNT
 """
 
 import os
@@ -29,8 +27,8 @@ if not SOURCE_NUMBERS:
 COLUMN_MAPPING = {
     "SALESTRANID": ("SALESTRANID", "int8", "NUMBER"),
     "DISCOUNTID": ("SALESTRANDISCOUNTID", "int8", "NUMBER"),
-    "SOURCENUMBER": ("SOURCENUMBER", "varchar(50)", "VARCHAR2(50)"),   # Will be derived
-    "OHLINK": ("OHLINK", "varchar(100)", None),                        # Will be derived
+    "SOURCENUMBER": ("SOURCENUMBER", "varchar(50)", "VARCHAR2(50)"),   # derived
+    "OHLINK": ("OHLINK", "varchar(100)", None),                        # derived
     "SOURCEINSERTDATE": ("SOURCEINSERTDATE", "timestamp(0)", "DATE"),
     "SOURCEINSERTUSERID": ("SOURCEINSERTUSERID", "varchar(50)", "VARCHAR2(50)"),
     "SOURCESYSTEMID": ("SOURCESYSTEMID", "int4", "NUMBER"),
@@ -80,7 +78,6 @@ def values_equal(a, b, alloy_type=None, onprem_type=None):
 
 # ========================== FETCH FUNCTIONS ==========================
 def fetch_oracle_discount_data(source_numbers):
-    """Oracle - Uses transformation logic for sourcenumber and ohlink"""
     conn = oracledb.connect(
         user=os.getenv("ORACLE_USER"),
         password=os.getenv("ORACLE_PASSWORD"),
@@ -119,7 +116,6 @@ def fetch_oracle_discount_data(source_numbers):
 
 
 def fetch_postgres_discount_data(source_numbers):
-    """AlloyDB - Direct fetch"""
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST"),
         port=os.getenv("PG_PORT", "5432"),
@@ -162,7 +158,7 @@ def reconcile_discount():
             ora_cols, ora_rows = fetch_oracle_discount_data(SOURCE_NUMBERS)
             pg_cols, pg_rows = fetch_postgres_discount_data(SOURCE_NUMBERS)
 
-            # Group by SOURCENUMBER (multiple rows possible)
+            # Group by SOURCENUMBER (multiple rows)
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCENUMBER")])
