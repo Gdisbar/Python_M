@@ -5,14 +5,10 @@ Parallel runner for all table reconciliations.
 
 Usage
 -----
-# Run all tables defined in CONFIG_DIR (from .env, default script_configs/)
 python runner.py
 
-# Run specific tables only
-python runner.py --tables charge discount
-
 Configuration is read from .env:
-  CONFIG_DIR   - directory with <table>.json configs
+  CONFIG_DIR   - directory with *.json configs
   OUTPUT_DIR   - where reports are written
   MAX_WORKERS  - parallel threads (default: number of tables)
 
@@ -49,8 +45,8 @@ logging.basicConfig(
 logger = logging.getLogger("runner")
 
 
-def discover_configs(config_dir: str, table_filter: list[str] | None = None) -> list[Path]:
-    """Return sorted list of config JSON paths, optionally filtered by table name."""
+def discover_configs(config_dir: str) -> list[Path]:
+    """Return sorted list of all JSON config paths in config_dir."""
     base = Path(config_dir)
     if not base.exists():
         raise FileNotFoundError(f"Config directory not found: {config_dir}")
@@ -58,15 +54,6 @@ def discover_configs(config_dir: str, table_filter: list[str] | None = None) -> 
     configs = sorted(base.glob("*.json"))
     if not configs:
         raise FileNotFoundError(f"No *.json config files found in: {config_dir}")
-
-    if table_filter:
-        wanted = {t.lower() for t in table_filter}
-        configs = [c for c in configs if c.stem.lower() in wanted]
-        if not configs:
-            raise ValueError(
-                f"None of the requested tables {table_filter} found in {config_dir}.\n"
-                f"Available: {[c.stem for c in sorted(base.glob('*.json'))]}"
-            )
 
     return configs
 
@@ -91,88 +78,11 @@ def run_one(config_path: Path, output_dir: str) -> dict:
         }
 
 
-def write_summary(reports: list[dict], output_dir: str) -> Path:
-    """Write a consolidated JSON + print a text summary to stdout."""
-    summary_dir = Path(output_dir) / "json_reports"
-    summary_dir.mkdir(parents=True, exist_ok=True)
-
-    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = summary_dir / f"summary_{ts}.json"
-
-    summary = {
-        "run_at":  datetime.now().isoformat(),
-        "tables":  [],
-        "overall": {
-            "total_tables":      len(reports),
-            "clean":             0,
-            "with_mismatches":   0,
-            "with_errors":       0,
-        },
-    }
-
-    print("\n" + "="*80)
-    print("  CONSOLIDATED RECONCILIATION SUMMARY")
-    print("="*80)
-    print(f"  {'Table':<30} {'Oracle':>8} {'Postgres':>10} {'Groups':>8} {'Mismatches':>12} {'Status'}")
-    print("-"*80)
-
-    for r in sorted(reports, key=lambda x: x.get("table", "")):
-        table       = r.get("table", "?")
-        ora_cnt     = r.get("oracle_row_count",   "?")
-        pg_cnt      = r.get("postgres_row_count",  "?")
-        grp_cnt     = r.get("common_group_keys",   "?")
-        mismatch_cnt = len(r.get("mismatches", {}))
-        has_errors   = bool(r.get("errors"))
-
-        if has_errors:
-            status = "❌ ERROR"
-            summary["overall"]["with_errors"] += 1
-        elif mismatch_cnt:
-            status = f"⚠️  {mismatch_cnt} groups"
-            summary["overall"]["with_mismatches"] += 1
-        else:
-            status = "✅ CLEAN"
-            summary["overall"]["clean"] += 1
-
-        print(f"  {table:<30} {str(ora_cnt):>8} {str(pg_cnt):>10} {str(grp_cnt):>8} {str(mismatch_cnt):>12}   {status}")
-
-        summary["tables"].append({
-            "table":              table,
-            "oracle_row_count":   ora_cnt,
-            "postgres_row_count": pg_cnt,
-            "common_group_keys":  grp_cnt,
-            "mismatch_groups":    mismatch_cnt,
-            "missing_in_oracle":  r.get("missing_in_oracle",   []),
-            "missing_in_postgres":r.get("missing_in_postgres", []),
-            "errors":             r.get("errors", []),
-            "status":             status,
-            "txt_report":         r.get("_txt_path"),
-            "json_report":        r.get("_json_path"),
-        })
-
-    print("-"*80)
-    ov = summary["overall"]
-    print(f"  Total: {ov['total_tables']}  |  ✅ Clean: {ov['clean']}  "
-          f"|  ⚠️  Mismatches: {ov['with_mismatches']}  "
-          f"|  ❌ Errors: {ov['with_errors']}")
-    print(f"\n  📊 Summary JSON → {path}")
-    print("="*80 + "\n")
-
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, default=str, ensure_ascii=False)
-
-    return path
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Parallel reconciliation runner — AlloyDB (Postgres) ↔ Oracle"
     )
-    parser.add_argument(
-        "--tables", nargs="+", metavar="TABLE",
-        help="Run only these tables (by config file stem, e.g. charge discount). "
-             "Omit to run all tables in CONFIG_DIR.",
-    )
+    # Removed --tables argument – always run all configs
     args = parser.parse_args()
 
     # ── Read settings from .env ───────────────────────────────────────────────
@@ -189,9 +99,9 @@ def main():
         print("    Set them in your .env file or environment before running.")
         sys.exit(1)
 
-    # ── Discover configs ──────────────────────────────────────────────────────
+    # ── Discover all configs ─────────────────────────────────────────────────
     try:
-        configs = discover_configs(config_dir, args.tables)
+        configs = discover_configs(config_dir)
     except (FileNotFoundError, ValueError) as exc:
         print(f"❌  {exc}")
         sys.exit(1)
@@ -201,7 +111,7 @@ def main():
     workers = max_workers if max_workers > 0 else len(configs)
     logger.info("Max workers        : %s", workers)
 
-    # ── Run in parallel ────────────────────────────────────────────────────────
+    # ── Run in parallel ───────────────────────────────────────────────────────
     reports = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
@@ -217,8 +127,6 @@ def main():
                 logger.exception("Unexpected error for %s", cfg_path)
                 reports.append({"table": cfg_path.stem.upper(), "errors": [str(exc)], "mismatches": {}})
 
-    # ── Summary ────────────────────────────────────────────────────────────────
-    write_summary(reports, output_dir)
 
     if any(r.get("errors") for r in reports):
         sys.exit(2)
