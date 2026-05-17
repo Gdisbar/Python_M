@@ -81,7 +81,6 @@ def values_equal(a, b, alloy_type=None, onprem_type=None):
 
 # ========================== DATA FETCHING ==========================
 def fetch_oracle_charge_data(source_numbers):
-    """Oracle - With transformation for sourcenumber and ohlink"""
     conn = oracledb.connect(
         user=os.getenv("ORACLE_USER"),
         password=os.getenv("ORACLE_PASSWORD"),
@@ -123,10 +122,9 @@ def fetch_oracle_charge_data(source_numbers):
 
 
 def fetch_postgres_charge_data(source_numbers):
-    """AlloyDB - Direct fetch"""
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST"),
-        port=os.getenv("PG_PORT", "5432"),
+        port=os.getenv("PG_PORT"),
         dbname=os.getenv("PG_DATABASE"),
         user=os.getenv("PG_USER"),
         password=os.getenv("PG_PASSWORD")
@@ -166,7 +164,7 @@ def reconcile_charge():
             ora_cols, ora_rows = fetch_oracle_charge_data(SOURCE_NUMBERS)
             pg_cols, pg_rows = fetch_postgres_charge_data(SOURCE_NUMBERS)
 
-            # Group by SOURCENUMBER (multiple rows possible)
+            # Group by SOURCENUMBER (multiple rows)
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCENUMBER")])
