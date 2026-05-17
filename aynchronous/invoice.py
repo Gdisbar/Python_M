@@ -99,7 +99,6 @@ def values_equal(a, b, alloy_type=None, onprem_type=None):
 
 # ========================== DATA FETCHING ==========================
 def fetch_oracle_invoice_data(source_numbers):
-    """Fetch from Oracle Invoice Table"""
     conn = oracledb.connect(
         user=os.getenv("ORACLE_USER"),
         password=os.getenv("ORACLE_PASSWORD"),
@@ -124,7 +123,6 @@ def fetch_oracle_invoice_data(source_numbers):
 
 
 def fetch_postgres_invoice_data(source_numbers):
-    """Fetch from AlloyDB Invoice Table"""
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST"),
         port=os.getenv("PG_PORT", "5432"),
