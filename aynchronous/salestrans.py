@@ -129,7 +129,6 @@ def values_equal(a, b, alloy_type=None, onprem_type=None):
 
 # ========================== DATA FETCHING FUNCTIONS ==========================
 def fetch_oracle_data(source_numbers):
-    """Fetch data from Oracle - Easy to modify / add filters"""
     conn = oracledb.connect(
         user=os.getenv("ORACLE_USER"),
         password=os.getenv("ORACLE_PASSWORD"),
@@ -154,7 +153,6 @@ def fetch_oracle_data(source_numbers):
 
 
 def fetch_postgres_data(source_numbers):
-    """Fetch data from AlloyDB/Postgres - Easy to modify / add filters"""
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST"),
         port=os.getenv("PG_PORT", "5432"),
@@ -193,11 +191,11 @@ def reconcile_salestran():
         print("=" * 130)
 
         try:
-            # === Fetch Data using dedicated functions ===
+            # === Fetch Data 
             ora_cols, ora_rows = fetch_oracle_data(SOURCE_NUMBERS)
             pg_cols, pg_rows = fetch_postgres_data(SOURCE_NUMBERS)
 
-            # Group by SOURCENUMBER
+            # Group by SOURCENUMBER (multiple rows)
             oracle_data = {}
             for row in ora_rows:
                 sn = str(row[ora_cols.index("SOURCENUMBER")])
@@ -216,8 +214,7 @@ def reconcile_salestran():
                 "postgres_row_count": sum(len(v) for v in postgres_data.values()),
                 "missing_in_oracle": list(set(postgres_data.keys()) - set(oracle_data.keys())),
                 "missing_in_postgres": list(set(oracle_data.keys()) - set(postgres_data.keys())),
-                "mismatches_by_sourcenumber": {},
-                "renamed_columns_comparison": {}
+                "mismatches_by_sourcenumber": {}
             }
 
             common_sns = set(oracle_data.keys()) & set(postgres_data.keys())
@@ -227,7 +224,6 @@ def reconcile_salestran():
                 p_row = postgres_data[sn][0]
 
                 mismatches = {}
-                renamed_comparisons = {}
 
                 for pg_col, (ora_col, alloy_type, onprem_type) in COLUMN_MAPPING.items():
                     if pg_col.upper() == "SOURCENUMBER":
@@ -235,7 +231,6 @@ def reconcile_salestran():
 
                     pg_val = p_row.get(pg_col.upper())
                     ora_val = o_row.get(ora_col) if ora_col else None
-                    is_renamed = (pg_col.upper() != (ora_col or "").upper())
 
                     if not values_equal(pg_val, ora_val, alloy_type, onprem_type):
                         mismatches[pg_col] = {
@@ -245,12 +240,7 @@ def reconcile_salestran():
                             "onprem_column": ora_col,
                             "onprem_type": onprem_type
                         }
-                    elif is_renamed:
-                        renamed_comparisons[pg_col] = {
-                            "alloydb_value": pg_val,
-                            "onprem_value": ora_val,
-                            "onprem_column": ora_col
-                        }
+
 
                 if mismatches:
                     report["mismatches_by_sourcenumber"][sn] = {
@@ -261,12 +251,6 @@ def reconcile_salestran():
                     for col, diff in mismatches.items():
                         print(f" • {col:40} | AlloyDB : {diff['alloydb_value']}")
                         print(f" {'':40} | On-Prem : {diff['onprem_value']} ({diff['onprem_column']}) ({diff['onprem_type']})")
-
-                if renamed_comparisons:
-                    report["renamed_columns_comparison"][sn] = renamed_comparisons
-                    print(f"\n🔄 Renamed Columns (Values Matched) → SOURCENUMBER: {sn}")
-                    for col, info in renamed_comparisons.items():
-                        print(f" • {col:40} → {info['onprem_column']:25} | Value: {info['alloydb_value']}")
 
             # Summary
             print("\n" + "="*130)
