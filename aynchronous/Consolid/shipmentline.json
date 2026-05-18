@@ -3,8 +3,8 @@
 
   "oracle": {
     "group_by_column": "SOURCEDETAILID1",
-    "base_query": "SELECT s.SHIPMENTID, s.SHIPMENTLINEID, s.SALESTRANID, s.SALESTRANDETAILID, s.SOURCESYSTEMID, s.SOURCEDETAILID1, s.SOURCEDETAILID2, s.SOURCEDETAILID3, s.SOURCEDETAILID4, s.SOURCEDETAILID5, i.SOURCEDETAILID6 AS ODAJS, s.SOURCEINSERTDATE, s.SOURCEINSERTUSERID, s.SOURCEUPDATEDATE, s.SOURCEUPDATEUSERID, s.INSERTDATE, s.UPDATEDATE, s.SHIPPRODUCTSKU, s.SHIPPRODUCTNAME, s.SHIPPRODUCTDESCRIPTION, s.SHIPPRODUCTUOM, s.SHIPQUANTITY FROM CEX01_OWN.SHIPMENTLINE s LEFT JOIN CEX01_OWN.INVOICEDETAIL i ON s.SALESTRANID = i.SALESTRANID AND s.SALESTRANDETAILID = i.SALESTRANDETAILID ",
-    "where_clause": "s.SOURCEDETAILID1 IN ({SOURCE_NUMBERS})"
+    "base_query":      "SELECT * FROM CEX01_OWN.SHIPMENTLINE",
+    "where_clause":    "SOURCEDETAILID1 IN ({SOURCE_NUMBERS})"
   },
 
   "postgres": {
@@ -24,7 +24,6 @@
     "ODSHP":                    { "oracle_col": "SOURCEDETAILID3" },
     "ODSEQ":                    { "oracle_col": "SOURCEDETAILID4" },
     "ODSSQ":                    { "oracle_col": "SOURCEDETAILID5" },
-    "ODAJS":                    { "oracle_col": "ODAJS" },                           /* aliased from i.SOURCEDETAILID6 */
     "SOURCEINSERTDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
     "SOURCEINSERTUSERID":       { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
     "SOURCEUPDATEDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
