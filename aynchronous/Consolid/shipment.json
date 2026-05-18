@@ -1,0 +1,64 @@
+{
+  "table_name": "SHIPMENT",
+
+  "oracle": {
+    "group_by_column": "SOURCEHEADERID1",
+    "base_query":      "SELECT * FROM CEX01_OWN.SHIPMENT",
+    "where_clause":    "SOURCEHEADERID1 IN ({SOURCE_NUMBERS})"
+  },
+
+  "postgres": {
+    "group_by_column": "SOURCENUMBER",
+    "base_query":      "SELECT * FROM sba_own.shipment",
+    "where_clause":    "sourcenumber IN ({SOURCE_NUMBERS})"
+  },
+
+  "column_mapping": {
+    "SHIPMENTID":               { "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SALESTRANID":              { "pg_type": "numeric",        "ora_type": "NUMBER" },
+    "SOURCESYSTEMID":           { "pg_type": "int4",           "ora_type": "NUMBER" },
+    "SOURCENUMBER":             { "oracle_col": "SOURCEHEADERID1", "skip_compare": true },
+    "ORLINK":                   { "oracle_col": "SOURCEHEADERID2" },
+    "ORSHP":                    { "oracle_col": "SOURCEHEADERID3" },
+    "SOURCEINSERTDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEUPDATEDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "INSERTDATE":               { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "UPDATEDATE":               { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SHIPMENTNUMBER":           { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPDATE":                 { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "CARRIERCODE":              { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPSTATUSCODE":           { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPSTATUSDESCRIPTION":    { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPSTATUSDATE":           { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SHIPMENTCLOSEDIND":        { "pg_type": "varchar(1)",     "ora_type": "VARCHAR2(1)" },
+    "SHIPNODENUMBER":           { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPNODEDESCRIPTION":      { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "TOTALWEIGHT":              { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "TOTALVOLUME":              { "pg_type": "varchar(30)",    "ora_type": "VARCHAR2(30)" },
+    "TOTALQUANTITY":            { "pg_type": "varchar(30)",    "ora_type": "VARCHAR2(30)" },
+    "CARTONQUANTITY":           { "pg_type": "varchar(30)",    "ora_type": "VARCHAR2(30)" },
+    "ACTUALSHIPDATE":           { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "ESTIMATEDDELIVERYDATE":    { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "ACTUALDELIVERYDATE":       { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "DROPSHIPIND":              { "pg_type": "varchar(1)",     "ora_type": "VARCHAR2(1)" },
+    "SHIPTOKEY":                { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPFROMKEY":              { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "TRANTYPE":                 { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPTOCOMPANY":            { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOADDRESS1":           { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOADDRESS2":           { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOADDRESS3":           { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOCITY":               { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOSTATE":              { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOZIP":                { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPTOEMAIL":              { "pg_type": "varchar(250)",   "ora_type": "VARCHAR2(250)" },
+    "DELIVERYCOMPLETEIND":      { "pg_type": "varchar(1)",     "ora_type": "VARCHAR2(1)" },
+    "CONTRACTNUMBER":           { "pg_type": "int8",           "ora_type": "NUMBER(10,0)" },
+    "ACTUALSHIPMENTDATE":       { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "BILLINGDATE":              { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "MANIFESTSTATUSDATE":       { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "ARPOSTINGDATE":            { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "CREDITCARDPAYMENTDATE":    { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "ACCOUNTLOCATION":          { "skip_compare": true }
+  }
+}
