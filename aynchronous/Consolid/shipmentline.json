@@ -1,0 +1,40 @@
+{
+  "table_name": "SHIPMENTLINE",
+
+  "oracle": {
+    "group_by_column": "SOURCEDETAILID1",
+    "base_query": "SELECT s.SHIPMENTID, s.SHIPMENTLINEID, s.SALESTRANID, s.SALESTRANDETAILID, s.SOURCESYSTEMID, s.SOURCEDETAILID1, s.SOURCEDETAILID2, s.SOURCEDETAILID3, s.SOURCEDETAILID4, s.SOURCEDETAILID5, i.SOURCEDETAILID6 AS ODAJS, s.SOURCEINSERTDATE, s.SOURCEINSERTUSERID, s.SOURCEUPDATEDATE, s.SOURCEUPDATEUSERID, s.INSERTDATE, s.UPDATEDATE, s.SHIPPRODUCTSKU, s.SHIPPRODUCTNAME, s.SHIPPRODUCTDESCRIPTION, s.SHIPPRODUCTUOM, s.SHIPQUANTITY FROM CEX01_OWN.SHIPMENTLINE s LEFT JOIN CEX01_OWN.INVOICEDETAIL i ON s.SALESTRANID = i.SALESTRANID AND s.SALESTRANDETAILID = i.SALESTRANDETAILID /* FIXME: verify join keys; ODAJS comes from INVOICEDETAIL */",
+    "where_clause": "s.SOURCEDETAILID1 IN ({SOURCE_NUMBERS})"
+  },
+
+  "postgres": {
+    "group_by_column": "SOURCENUMBER",
+    "base_query":      "SELECT * FROM sba_own.shipmentline",
+    "where_clause":    "sourcenumber IN ({SOURCE_NUMBERS})"
+  },
+
+  "column_mapping": {
+    "SHIPMENTID":               { "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SHIPMENTLINEID":           { "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SALESTRANID":              { "pg_type": "numeric",        "ora_type": "NUMBER" },
+    "SALESTRANDETAILID":        { "pg_type": "numeric",        "ora_type": "NUMBER" },
+    "SOURCESYSTEMID":           { "pg_type": "int4",           "ora_type": "NUMBER" },
+    "SOURCENUMBER":             { "oracle_col": "SOURCEDETAILID1", "skip_compare": true },
+    "ODLINK":                   { "oracle_col": "SOURCEDETAILID2" },
+    "ODSHP":                    { "oracle_col": "SOURCEDETAILID3" },
+    "ODSEQ":                    { "oracle_col": "SOURCEDETAILID4" },
+    "ODSSQ":                    { "oracle_col": "SOURCEDETAILID5" },
+    "ODAJS":                    { "oracle_col": "ODAJS" },                           /* aliased from i.SOURCEDETAILID6 */
+    "SOURCEINSERTDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEINSERTUSERID":       { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SOURCEUPDATEDATE":         { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEUPDATEUSERID":       { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "INSERTDATE":               { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "UPDATEDATE":               { "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SHIPPRODUCTSKU":           { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPPRODUCTNAME":          { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPPRODUCTDESCRIPTION":   { "pg_type": "varchar(100)",   "ora_type": "VARCHAR2(100)" },
+    "SHIPPRODUCTUOM":           { "pg_type": "varchar(50)",    "ora_type": "VARCHAR2(50)" },
+    "SHIPQUANTITY":             { "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" }
+  }
+}
