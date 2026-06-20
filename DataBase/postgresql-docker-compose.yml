@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres15
+    environment:
+      POSTGRES_DB: TestDB
+      POSTGRES_USER: acro0
+      POSTGRES_PASSWORD: <your_password>
+    volumes:
+      - postgres_volume_data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    restart: unless-stopped
+
+volumes:
+  postgres_volume_data:
