@@ -1,0 +1,53 @@
+{
+  "table_name": "INVOICE",
+
+  "oracle": {
+    "group_by_column": "SOURCEHEADERID1",
+    "base_query":      "SELECT * FROM CEX01_OWN.INVOICE",
+    "where_clause":    "SOURCEHEADERID1 IN ({SOURCE_NUMBERS})"
+  },
+
+  "postgres": {
+    "group_by_column": "SOURCENUMBER",
+    "base_query":      "SELECT * FROM sba_own.invoice",
+    "where_clause":    "sourcenumber IN ({SOURCE_NUMBERS})"
+  },
+
+  "column_mapping": {
+    "INVOICEID":            { "oracle_col": "INVOICEID",           "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SALESTRANID":          { "oracle_col": "SALESTRANID",         "pg_type": "numeric",        "ora_type": "NUMBER" },
+    "SOURCESYSTEMID":       { "oracle_col": "SOURCESYSTEMID",      "pg_type": "int4",           "ora_type": "NUMBER" },
+    "SOURCENUMBER":         { "oracle_col": "SOURCEHEADERID1",                                   "skip_compare": true },
+    "ORLINK":               { "oracle_col": "SOURCEHEADERID2" },
+    "ORSHP":                { "oracle_col": "SOURCEHEADERID3" },
+    "ORCONO":               { "oracle_col": "SOURCEHEADERID4" },
+    "ORDIV":                { "oracle_col": "SOURCEHEADERID5" },
+    "SHIPMENTID":           { "oracle_col": "SHIPMENTID",          "pg_type": "numeric",        "ora_type": "NUMBER" },
+    "SOURCEINSERTDATE":     { "oracle_col": "SOURCEINSERTDATE",    "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEUPDATEDATE":     { "oracle_col": "SOURCEUPDATEDATE",    "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "INSERTDATE":           { "oracle_col": "INSERTDATE",          "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "UPDATEDATE":           { "oracle_col": "UPDATEDATE",          "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "INVOICENUMBER":        { "oracle_col": "INVOICENUMBER" },
+    "INVOICETYPE":          { "oracle_col": "INVOICETYPE" },
+    "CHARGEDACTUALFREIGHT": { "oracle_col": "CHARGEDACTUALFREIGH" },
+    "ACTUALFREIGHTCHARGE":  { "oracle_col": "ACTUALFREIGHTCHARGE", "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "TOTALTAXES":           { "oracle_col": "TOTALTAXES",          "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "LINETOTALAMOUNT":      { "oracle_col": "LINETOTALAMOUNT",     "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "INVOICESTATUS":        { "oracle_col": "INVOICESTATUS" },
+    "INVOICETOTAL":         { "oracle_col": "INVOICETOTAL",        "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "HEADERCHARGES":        { "oracle_col": "HEADERCHARGES",       "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "MASTERSALESTRANID":    { "oracle_col": "MASTERSALESTRANID" },
+    "INVOICEREASON":        { "oracle_col": "INVOICEREASON" },
+    "COSTCURRENCY":         { "oracle_col": "COSTCURRENCY" },
+    "ENTERPRISECODE":       { "oracle_col": "ENTERPRISECODE" },
+    "SHIPNODENUMBER":       { "oracle_col": "SHIPNODENUMBER" },
+    "SHIPMENTNUMBER":       { "oracle_col": "SHIPMENTNUMBER" },
+    "ACCOUNTLOCATION":      { "oracle_col": "ACCOUNTLOCATION" },
+    "CASHPOSTINGDATE":      { "oracle_col": "CASHPOSTINGDATE",     "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SETTLEMENTDATE":       { "oracle_col": "SETTLEMENTDATE",      "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "FINANCIALTRANSDATE":   { "oracle_col": "FINANCIALTRANSDATE",  "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SHIPMENTSTATUS":       { "oracle_col": "SHIPMENTSTATUS" },
+    "CREDITSTATUS":         { "oracle_col": "CREDITSTATUS" },
+    "HEADERCHARGESTAX":     { "oracle_col": "HEADERCHARGESTAX",    "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" }
+  }
+}

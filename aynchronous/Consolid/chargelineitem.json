@@ -1,0 +1,46 @@
+{
+  "table_name": "CHARGELINEITEM",
+
+  "oracle": {
+    "match_key":       "CHARGELINEITEMID",
+    "group_by_column": "SOURCENUMBER",
+    "base_query": "SELECT c.SALESTRANID, c.SALESTRANDETAILID, c.CHARGELINEITEMID, SUBSTR(c.SOURCEHEADERKEY, 1, INSTR(c.SOURCEHEADERKEY, '.') - 1) AS SOURCENUMBER, SUBSTR(c.SOURCEHEADERKEY, INSTR(c.SOURCEHEADERKEY, '.') + 1) AS OTLINK, c.CHARGENUMBER AS OTRID, sl_seq.SOURCESEQNUMBER AS OTSEQ, sl_ssq.SOURCEDETAILID5 AS OTSSQ, sl_cue.SOURCEDETAILID4 AS OTCUE, sl_shp.SOURCEDETAILID3 AS OTSHP, c.SOURCEINSERTDATE, c.SOURCEINSERTUSERID, c.SOURCEUPDATEDATE, c.SOURCEUPDATEUSERID, c.INSERTDATE, c.UPDATEDATE, c.CHARGENUMBER, c.CHARGETAXCODETYPE, c.CHARGETYPE, c.CHARGECATEGORY, c.CHARGEDESCRIPTION, c.CHARGEAMOUNT, c.TAXPERCENTAGE, c.TAXABLEIND, c.POSTINGPRODUCTSKU, c.SOURCESYSTEMID FROM CEX01_OWN.CHARGELINEITEMASSOC c LEFT JOIN CEX01_OWN.SALESTRANLINEITEM sl_seq ON c.SALESTRANID = sl_seq.SALESTRANID AND c.SALESTRANDETAILID = sl_seq.SALESTRANDETAILID AND sl_seq.SOURCESYSTEMTABLE = 'FIXME_TABLE_FOR_OTSEQ' LEFT JOIN CEX01_OWN.SALESTRANLINEITEM sl_ssq ON c.SALESTRANID = sl_ssq.SALESTRANID AND c.SALESTRANDETAILID = sl_ssq.SALESTRANDETAILID AND sl_ssq.SOURCESYSTEMTABLE = 'FIXME_TABLE_FOR_OTSSQ' LEFT JOIN CEX01_OWN.SALESTRANLINEITEM sl_cue ON c.SALESTRANID = sl_cue.SALESTRANID AND c.SALESTRANDETAILID = sl_cue.SALESTRANDETAILID AND sl_cue.SOURCESYSTEMTABLE = 'FIXME_TABLE_FOR_OTCUE' LEFT JOIN CEX01_OWN.SALESTRANLINEITEM sl_shp ON c.SALESTRANID = sl_shp.SALESTRANID AND c.SALESTRANDETAILID = sl_shp.SALESTRANDETAILID AND sl_shp.SOURCESYSTEMTABLE = 'FIXME_TABLE_FOR_OTSHP'",
+    "where_clause": "SUBSTR(c.SOURCEHEADERKEY, 1, INSTR(c.SOURCEHEADERKEY, '.') - 1) IN ({SOURCE_NUMBERS})"
+  },
+
+  "postgres": {
+    "match_key":       "CHARGELINEITEMID",
+    "group_by_column": "SOURCENUMBER",
+    "base_query":      "SELECT * FROM sba_own.chargelineitem",
+    "where_clause":    "sourcenumber IN ({SOURCE_NUMBERS})"
+  },
+
+  "column_mapping": {
+    "SALESTRANID":        { "oracle_col": "SALESTRANID",        "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SALESTRANDETAILID":  { "oracle_col": "SALESTRANDETAILID",  "pg_type": "int8",           "ora_type": "NUMBER" },
+    "CHARGELINEITEMID":   { "oracle_col": "CHARGELINEITEMID",   "pg_type": "int8",           "ora_type": "NUMBER" },
+    "SOURCENUMBER":       { "oracle_col": "SOURCENUMBER",                                     "skip_compare": true },
+    "OTLINK":             { "oracle_col": "OTLINK",                                           "derived_in_oracle": true },
+    "OTRID":              { "oracle_col": "OTRID",                                            "derived_in_oracle": true },
+    "OTSEQ":              { "oracle_col": "OTSEQ",                                            "derived_in_oracle": true },
+    "OTSSQ":              { "oracle_col": "OTSSQ",                                            "derived_in_oracle": true },
+    "OTCUE":              { "oracle_col": "OTCUE",                                            "derived_in_oracle": true },
+    "OTSHP":              { "oracle_col": "OTSHP",                                            "derived_in_oracle": true },
+    "SOURCEINSERTDATE":   { "oracle_col": "SOURCEINSERTDATE",   "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEINSERTUSERID": { "oracle_col": "SOURCEINSERTUSERID" },
+    "SOURCEUPDATEDATE":   { "oracle_col": "SOURCEUPDATEDATE",   "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "SOURCEUPDATEUSERID": { "oracle_col": "SOURCEUPDATEUSERID" },
+    "INSERTDATE":         { "oracle_col": "INSERTDATE",         "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "UPDATEDATE":         { "oracle_col": "UPDATEDATE",         "pg_type": "timestamp(0)",   "ora_type": "DATE" },
+    "CHARGENUMBER":       { "oracle_col": "CHARGENUMBER" },
+    "CHARGETAXCODETYPE":  { "oracle_col": "CHARGETAXCODETYPE" },
+    "CHARGETYPE":         { "oracle_col": "CHARGETYPE" },
+    "CHARGECATEGORY":     { "oracle_col": "CHARGECATEGORY" },
+    "CHARGEDESCRIPTION":  { "oracle_col": "CHARGEDESCRIPTION" },
+    "CHARGEAMOUNT":       { "oracle_col": "CHARGEAMOUNT",       "pg_type": "numeric(19, 6)", "ora_type": "NUMBER(19,6)" },
+    "TAXPERCENTAGE":      { "oracle_col": "TAXPERCENTAGE",      "pg_type": "numeric(10, 6)", "ora_type": "NUMBER(10,6)" },
+    "TAXABLEIND":         { "oracle_col": "TAXABLEIND" },
+    "POSTINGPRODUCTSKU":  { "oracle_col": "POSTINGPRODUCTSKU" },
+    "SOURCESYSTEMID":     { "oracle_col": "SOURCESYSTEMID",     "pg_type": "int4",           "ora_type": "NUMBER" }
+  }
+}
